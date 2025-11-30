@@ -1,0 +1,22 @@
+{
+  "name": "طب‌یار | دستیار هوشمند پزشک",
+  "short_name": "طب‌یار",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#FEFDF5",
+  "theme_color": "#0F766E",
+  "description": "نرم‌افزار مدیریت مطب و نسخه‌نویسی آفلاین",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "type": "image/png",
+      "sizes": "192x192"
+    },
+    {
+      "src": "/icon-512.png",
+      "type": "image/png",
+      "sizes": "512x512"
+    }
+  ]
+}
