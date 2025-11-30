@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="fa" dir="rtl">
   <head>
@@ -37,6 +38,7 @@
             },
             fontFamily: {
               sans: ['Vazirmatn', 'ui-sans-serif', 'system-ui', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'Helvetica Neue', 'Arial', 'sans-serif'],
+              serif: ['Georgia', 'Cambria', 'Times New Roman', 'Times', 'serif'],
             }
           }
         }
@@ -61,13 +63,15 @@
       /* Print Specific Styles */
       @media print {
         @page {
-          size: A5;
           margin: 0;
+          size: auto; /* Let the container define the size */
         }
         body {
           background-color: white;
           margin: 0;
           padding: 0;
+          -webkit-print-color-adjust: exact !important;
+          print-color-adjust: exact !important;
         }
         /* Hide everything by default */
         body * {
@@ -78,14 +82,17 @@
           visibility: visible;
         }
         #print-container {
-          position: fixed;
+          position: absolute;
           left: 0;
           top: 0;
           width: 100%;
-          height: 100%;
+          min-height: 100vh;
           background: white;
           z-index: 9999;
-          padding: 15mm; /* Standard print margin */
+          display: flex;
+          justify-content: center;
+          align-items: flex-start;
+          padding: 0;
         }
         /* Hide navigation and other UI elements explicitly */
         nav, header, footer, button, .no-print {

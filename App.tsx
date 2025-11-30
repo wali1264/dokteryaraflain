@@ -30,97 +30,199 @@ import {
   RefreshCw,
   Image as ImageIcon,
   CheckCircle,
-  UserPlus
+  UserPlus,
+  Maximize2,
+  Minimize2,
+  Eye,
+  EyeOff
 } from 'lucide-react';
 import { dbParams, backupSystem } from './db';
 import { Patient, Drug, PrescriptionTemplate, DoctorProfile, PrescriptionItem, VitalSigns, Prescription } from './types';
 
+// --- TYPES FOR PRINT SETTINGS ---
+interface PrintSettings {
+  paperSize: 'a4' | 'a5';
+  showHeader: boolean;
+}
+
 // --- SHARED COMPONENTS ---
 
 // 0. Prescription Paper (Reusable UI for both Preview and Print)
+// ROYAL TWO-COLUMN LAYOUT
 const PrescriptionPaper = ({ 
-  data 
+  data,
+  settings
 }: { 
   data: { 
     doctor: DoctorProfile, 
     patient: Patient, 
     prescription: Prescription 
-  } 
+  },
+  settings: PrintSettings
 }) => {
   const { doctor, patient, prescription } = data;
+  
+  // Dimensions based on settings
+  // A5: 148mm x 210mm
+  // A4: 210mm x 297mm
+  const containerStyle = {
+    width: settings.paperSize === 'a5' ? '148mm' : '210mm',
+    height: settings.paperSize === 'a5' ? '210mm' : '297mm',
+    // In preview mode, we might scale this. In print mode, it fills the page if setup correctly.
+  };
 
   return (
-    <div className="w-full h-full bg-white text-black p-8 relative flex flex-col">
-      {/* Header */}
-      <div className="flex justify-between items-start border-b-2 border-gray-800 pb-4 mb-6">
-        <div className="flex gap-4 items-center">
-           <div className="text-right">
-            <h1 className="text-2xl font-bold mb-1">{doctor.fullName}</h1>
-            <p className="text-sm text-gray-600 font-bold">{doctor.specialty}</p>
-            <p className="text-sm text-gray-600 mt-1">نظام پزشکی: {doctor.medicalCouncilNumber}</p>
+    <div 
+      style={containerStyle} 
+      className="bg-white text-black relative flex flex-col mx-auto overflow-hidden border-2 border-gray-800"
+    >
+      {/* Header Section */}
+      {settings.showHeader && (
+        <div className="flex justify-between items-center p-4 border-b-2 border-gray-800 bg-white z-10 relative h-[15%]">
+          {/* Doctor Info (Right - RTL) */}
+          <div className="text-right w-2/3">
+             <h1 className="text-2xl font-black mb-1 font-serif tracking-tight">{doctor.fullName}</h1>
+             <p className="font-bold text-gray-700 text-sm">{doctor.specialty}</p>
+             <div className="mt-2 flex gap-4 text-xs font-mono text-gray-600">
+               <span>N.P: {doctor.medicalCouncilNumber}</span>
+               <span>Tel: {doctor.phoneNumber}</span>
+             </div>
+          </div>
+          
+          {/* Logo (Left - LTR position visually) */}
+          <div className="w-1/3 flex justify-end">
+             {doctor.logo ? (
+               <img src={doctor.logo} alt="Logo" className="max-h-20 object-contain" />
+             ) : (
+               <div className="w-16 h-16 border-2 border-gray-300 rounded-full flex items-center justify-center">
+                 <Stethoscope className="w-8 h-8 text-gray-300" />
+               </div>
+             )}
           </div>
         </div>
+      )}
+
+      {/* Main Body - Two Columns */}
+      <div className="flex flex-row flex-1 h-[85%]">
         
-        <div className="flex flex-col items-end gap-2">
-           {doctor.logo && (
-             <img src={doctor.logo} alt="Logo" className="h-20 object-contain mb-2" />
+        {/* RIGHT COLUMN (Main Content - Rx) - 72% Width */}
+        <div className="w-[72%] p-5 flex flex-col relative">
+           {/* Date Top Right */}
+           <div className="absolute top-4 left-4 text-xs font-mono border border-gray-400 px-2 py-1 rounded">
+              Date: {new Date(prescription.date).toLocaleDateString('fa-IR')}
+           </div>
+
+           {/* Rx Symbol */}
+           <div className="mt-6 mb-4">
+             <span className="text-5xl font-serif italic font-black text-gray-800">Rx</span>
+           </div>
+
+           {/* Items List */}
+           <div className="flex-1">
+             <ul className="space-y-4">
+               {prescription.items.map((item, idx) => (
+                 <li key={item.id} className="flex flex-col border-b border-gray-200 pb-2 last:border-0">
+                   <div className="flex justify-between items-baseline">
+                     <div className="flex items-baseline gap-2">
+                       <span className="font-bold text-gray-500 text-sm w-5">{idx + 1}.</span>
+                       <span className="font-bold text-lg">{item.drugName}</span>
+                     </div>
+                     <span className="font-mono text-lg font-bold text-gray-700 dir-ltr">{item.dosage}</span>
+                   </div>
+                   {item.instruction && (
+                     <div className="text-sm text-gray-600 pr-7 mt-0.5 font-medium">{item.instruction}</div>
+                   )}
+                 </li>
+               ))}
+             </ul>
+           </div>
+
+           {/* Diagnosis Footer */}
+           {prescription.diagnosis && (
+             <div className="mt-4 pt-4 border-t-2 border-gray-800">
+                <span className="font-bold text-sm bg-gray-800 text-white px-2 py-0.5 rounded-sm ml-2">Dx:</span>
+                <span className="font-bold text-gray-800">{prescription.diagnosis}</span>
+             </div>
            )}
-           <div className="text-left text-xs text-gray-600">
-            <p className="mb-1">{doctor.address}</p>
-            <p style={{direction: 'ltr'}}>{doctor.phoneNumber}</p>
-          </div>
-        </div>
-      </div>
 
-      {/* Patient Info */}
-      <div className="flex justify-between items-center bg-gray-50 p-3 rounded-lg border border-gray-200 mb-6 text-sm print:bg-transparent print:border-gray-300">
-        <div className="flex gap-6">
-          <span className="font-bold text-lg">نام بیمار: {patient.fullName}</span>
-          <span className="pt-1">سن: {patient.age}</span>
-          {prescription.vitalSigns.weight && <span className="pt-1">وزن: {prescription.vitalSigns.weight} kg</span>}
-        </div>
-        <div className="flex gap-2 items-center">
-          <span className="font-bold">تاریخ:</span>
-          <span className="font-mono text-lg">{new Date(prescription.date).toLocaleDateString('fa-IR')}</span>
-        </div>
-      </div>
-
-      {/* Vitals & Diagnosis */}
-      <div className="mb-6 grid grid-cols-4 gap-4 text-sm text-gray-600 border-b border-gray-100 pb-4">
-         {prescription.vitalSigns.bp && <div><span className="font-bold text-xs text-gray-400 ml-1">BP:</span>{prescription.vitalSigns.bp}</div>}
-         {prescription.vitalSigns.pr && <div><span className="font-bold text-xs text-gray-400 ml-1">PR:</span>{prescription.vitalSigns.pr}</div>}
-         {prescription.vitalSigns.temp && <div><span className="font-bold text-xs text-gray-400 ml-1">Temp:</span>{prescription.vitalSigns.temp}</div>}
-         {prescription.diagnosis && <div className="col-span-4 mt-2 font-bold text-gray-900 text-base">Dx: {prescription.diagnosis}</div>}
-      </div>
-
-      {/* Rx Items */}
-      <div className="mb-12 flex-1">
-        <h3 className="font-bold text-3xl mb-6 text-gray-800 font-serif italic">Rx</h3>
-        <ul className="space-y-6">
-          {prescription.items.map((item, idx) => (
-            <li key={item.id} className="flex justify-between items-baseline border-b border-dashed border-gray-200 pb-3 last:border-0">
-              <div className="flex items-baseline gap-3">
-                <span className="font-bold text-gray-400 w-6 text-sm">{idx + 1}.</span>
-                <div>
-                   <span className="font-bold text-xl">{item.drugName}</span>
-                   {item.instruction && <div className="text-sm text-gray-600 mt-1 mr-4 font-medium">{item.instruction}</div>}
-                </div>
+           {/* Signature Space */}
+           <div className="mt-8 flex justify-end">
+              <div className="text-center w-32">
+                 <div className="h-16"></div>
+                 <div className="border-t border-gray-400 pt-1 text-xs text-gray-500">Signature</div>
               </div>
-              <span className="font-mono text-xl font-bold">{item.dosage}</span>
-            </li>
-          ))}
-        </ul>
-      </div>
+           </div>
+        </div>
 
-      {/* Footer / Signature */}
-      <div className="mt-auto pt-10 flex justify-between items-end">
-         <div className="text-[10px] text-gray-300">
-            Powered by TabYar
-         </div>
-         <div className="text-center w-48">
-            <div className="h-24 border-b border-gray-400 mb-2"></div>
-            <span className="text-sm font-bold text-gray-600">مهر و امضاء پزشک</span>
-         </div>
+        {/* LEFT COLUMN (Sidebar - Vitals & Patient) - 28% Width */}
+        {/* We use order-last in RTL to make it appear on the LEFT side visually */}
+        <div className="w-[28%] bg-gray-100 border-r-2 border-gray-800 p-3 flex flex-col gap-6 text-sm order-last print-color-adjust-exact">
+           
+           {/* Patient Info Block */}
+           <div className="flex flex-col gap-2">
+             <div className="border-b border-gray-400 pb-1 mb-1 font-bold text-gray-700">Patient Info</div>
+             <div>
+               <span className="block text-xs text-gray-500">Name:</span>
+               <span className="font-bold block text-base truncate">{patient.fullName}</span>
+             </div>
+             <div className="flex gap-2">
+                <div className="flex-1">
+                  <span className="block text-xs text-gray-500">Age:</span>
+                  <span className="font-bold">{patient.age}</span>
+                </div>
+                <div className="flex-1">
+                  <span className="block text-xs text-gray-500">Sex:</span>
+                  <span className="font-bold">{patient.gender === 'male' ? 'M' : 'F'}</span>
+                </div>
+             </div>
+             {prescription.vitalSigns.weight && (
+               <div>
+                  <span className="block text-xs text-gray-500">Weight:</span>
+                  <span className="font-bold">{prescription.vitalSigns.weight} kg</span>
+               </div>
+             )}
+           </div>
+
+           {/* Vitals Block */}
+           <div className="flex flex-col gap-3">
+             <div className="border-b border-gray-400 pb-1 mb-1 font-bold text-gray-700">Clinical Records</div>
+             
+             {prescription.vitalSigns.bp && (
+               <div className="flex justify-between items-center bg-white p-1 rounded border border-gray-200">
+                 <span className="font-bold text-xs text-gray-500">BP</span>
+                 <span className="font-mono font-bold">{prescription.vitalSigns.bp}</span>
+               </div>
+             )}
+             
+             {prescription.vitalSigns.pr && (
+               <div className="flex justify-between items-center bg-white p-1 rounded border border-gray-200">
+                 <span className="font-bold text-xs text-gray-500">PR</span>
+                 <span className="font-mono font-bold">{prescription.vitalSigns.pr}</span>
+               </div>
+             )}
+
+             {prescription.vitalSigns.rr && (
+               <div className="flex justify-between items-center bg-white p-1 rounded border border-gray-200">
+                 <span className="font-bold text-xs text-gray-500">RR</span>
+                 <span className="font-mono font-bold">{prescription.vitalSigns.rr}</span>
+               </div>
+             )}
+
+             {prescription.vitalSigns.temp && (
+               <div className="flex justify-between items-center bg-white p-1 rounded border border-gray-200">
+                 <span className="font-bold text-xs text-gray-500">T</span>
+                 <span className="font-mono font-bold">{prescription.vitalSigns.temp}°</span>
+               </div>
+             )}
+           </div>
+           
+           {/* Address Footer in Sidebar */}
+           <div className="mt-auto pt-4 text-[9px] text-gray-500 leading-tight text-center border-t border-gray-300">
+              {doctor.address}
+           </div>
+
+        </div>
+
       </div>
     </div>
   );
@@ -128,19 +230,21 @@ const PrescriptionPaper = ({
 
 // 0.1 Print Container (Hidden in UI, Visible in Print)
 const PrintContainer = ({ 
-  data 
+  data,
+  settings
 }: { 
   data: { 
     doctor: DoctorProfile, 
     patient: Patient, 
     prescription: Prescription 
-  } | null 
+  } | null,
+  settings: PrintSettings
 }) => {
   if (!data) return null;
   
   return (
-    <div id="print-container">
-      <PrescriptionPaper data={data} />
+    <div id="print-container" className="flex justify-center items-start pt-0">
+      <PrescriptionPaper data={data} settings={settings} />
     </div>
   );
 };
@@ -150,56 +254,116 @@ const PrintPreviewModal = ({
   data,
   isOpen,
   onClose,
-  onConfirmPrint
+  onConfirmPrint,
+  settings,
+  onSettingsChange
 }: {
   data: { doctor: DoctorProfile, patient: Patient, prescription: Prescription } | null,
   isOpen: boolean,
   onClose: () => void,
-  onConfirmPrint: () => void
+  onConfirmPrint: () => void,
+  settings: PrintSettings,
+  onSettingsChange: (s: PrintSettings) => void
 }) => {
   if (!isOpen || !data) return null;
 
   return (
-    <div className="fixed inset-0 bg-gray-900/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-hidden no-print">
-      <div className="bg-gray-100 rounded-2xl w-full max-w-4xl h-[90vh] flex flex-col shadow-2xl overflow-hidden">
+    <div className="fixed inset-0 bg-gray-900/90 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-hidden no-print">
+      <div className="bg-white rounded-2xl w-full max-w-6xl h-[95vh] flex flex-col shadow-2xl overflow-hidden">
         {/* Modal Header */}
-        <div className="p-4 bg-white border-b border-gray-200 flex justify-between items-center">
-          <h3 className="font-bold text-lg text-gray-800 flex items-center gap-2">
-            <Printer className="w-5 h-5 text-medical-700" />
-            پیش‌نمایش چاپ
-          </h3>
-          <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-full transition-colors">
+        <div className="p-4 bg-gray-50 border-b border-gray-200 flex justify-between items-center">
+          <div className="flex items-center gap-2">
+            <div className="bg-medical-100 p-2 rounded-lg">
+              <Printer className="w-5 h-5 text-medical-700" />
+            </div>
+            <div>
+              <h3 className="font-bold text-lg text-gray-800">پیش‌نمایش و تنظیمات چاپ</h3>
+              <p className="text-xs text-gray-500">قبل از چاپ، ظاهر نسخه را بررسی کنید</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="p-2 hover:bg-gray-200 rounded-full transition-colors">
             <X className="w-6 h-6 text-gray-500" />
           </button>
         </div>
 
-        {/* Preview Area (Simulates Paper) */}
-        <div className="flex-1 overflow-y-auto p-8 flex justify-center bg-gray-200">
-          <div className="w-[148mm] min-h-[210mm] bg-white shadow-xl transition-transform origin-top scale-100 md:scale-105">
-             <PrescriptionPaper data={data} />
-          </div>
-        </div>
+        <div className="flex flex-col md:flex-row flex-1 overflow-hidden">
+          
+          {/* Controls Panel (Left Side in RTL) */}
+          <div className="w-full md:w-80 bg-white border-l border-gray-200 p-6 flex flex-col gap-6 overflow-y-auto">
+             
+             <div className="space-y-4">
+               <h4 className="font-bold text-gray-700 border-b border-gray-100 pb-2">تنظیمات کاغذ</h4>
+               
+               <div className="flex flex-col gap-2">
+                 <label className="text-sm text-gray-600 mb-1">اندازه کاغذ:</label>
+                 <div className="flex bg-gray-100 p-1 rounded-xl">
+                   <button
+                     onClick={() => onSettingsChange({...settings, paperSize: 'a5'})}
+                     className={`flex-1 py-2 px-4 rounded-lg text-sm font-bold transition-all ${
+                       settings.paperSize === 'a5' 
+                         ? 'bg-white text-medical-700 shadow-sm' 
+                         : 'text-gray-500 hover:text-gray-700'
+                     }`}
+                   >
+                     A5 (استاندارد)
+                   </button>
+                   <button
+                     onClick={() => onSettingsChange({...settings, paperSize: 'a4'})}
+                     className={`flex-1 py-2 px-4 rounded-lg text-sm font-bold transition-all ${
+                       settings.paperSize === 'a4' 
+                         ? 'bg-white text-medical-700 shadow-sm' 
+                         : 'text-gray-500 hover:text-gray-700'
+                     }`}
+                   >
+                     A4
+                   </button>
+                 </div>
+               </div>
+             </div>
 
-        {/* Modal Footer */}
-        <div className="p-4 bg-white border-t border-gray-200 flex justify-between items-center">
-           <span className="text-sm text-gray-500 hidden md:block">
-             * اندازه کاغذ پیش‌فرض: A5
-           </span>
-           <div className="flex gap-3 w-full md:w-auto">
-             <button 
-               onClick={onClose}
-               className="flex-1 md:flex-none px-6 py-3 border border-gray-300 text-gray-700 font-bold rounded-xl hover:bg-gray-50 transition-colors"
+             <div className="space-y-4">
+               <h4 className="font-bold text-gray-700 border-b border-gray-100 pb-2">ظاهر نسخه</h4>
+               
+               <div className="flex items-center justify-between bg-gray-50 p-3 rounded-xl border border-gray-100">
+                 <div className="flex items-center gap-2">
+                    {settings.showHeader ? <Eye className="w-4 h-4 text-blue-600"/> : <EyeOff className="w-4 h-4 text-gray-400"/>}
+                    <span className="text-sm font-medium text-gray-700">نمایش سربرگ</span>
+                 </div>
+                 <button 
+                   onClick={() => onSettingsChange({...settings, showHeader: !settings.showHeader})}
+                   className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${settings.showHeader ? 'bg-medical-500' : 'bg-gray-300'}`}
+                 >
+                   <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${settings.showHeader ? '-translate-x-6' : '-translate-x-1'}`} />
+                 </button>
+               </div>
+               <p className="text-xs text-gray-400 leading-relaxed">
+                 اگر از کاغذهای سربرگ‌دار آماده استفاده می‌کنید، گزینه "نمایش سربرگ" را خاموش کنید تا روی لوگوی شما چاپ نشود.
+               </p>
+             </div>
+
+             <div className="mt-auto pt-6 border-t border-gray-100">
+                <button 
+                  onClick={onConfirmPrint}
+                  className="w-full py-4 bg-gray-900 text-white font-bold rounded-xl hover:bg-black shadow-lg flex items-center justify-center gap-3 transition-transform hover:scale-[1.02]"
+                >
+                  <Printer className="w-5 h-5" />
+                  تایید و چاپ
+                </button>
+             </div>
+          </div>
+
+          {/* Preview Area (Right Side in RTL) */}
+          <div className="flex-1 bg-gray-200 overflow-auto p-8 flex justify-center items-start">
+             <div 
+               className="bg-white shadow-2xl transition-all duration-300 origin-top"
+               style={{
+                 transform: 'scale(0.85)', // Scale down slightly to fit visual area
+               }}
              >
-               بازگشت به ویرایش
-             </button>
-             <button 
-               onClick={onConfirmPrint}
-               className="flex-1 md:flex-none px-8 py-3 bg-medical-700 text-white font-bold rounded-xl hover:bg-medical-900 shadow-lg shadow-medical-500/30 flex items-center justify-center gap-2 transition-all transform hover:scale-105"
-             >
-               <Printer className="w-5 h-5" />
-               تایید و چاپ نهایی
-             </button>
-           </div>
+                <PrescriptionPaper data={data} settings={settings} />
+             </div>
+          </div>
+
         </div>
       </div>
     </div>
@@ -243,7 +407,7 @@ const Navigation = ({ activeTab, onTabChange }: { activeTab: string, onTabChange
           ))}
         </div>
         <div className="p-4 border-t border-gray-100 text-center text-xs text-gray-400">
-          نسخه ۱.۶.۱
+          نسخه ۱.۶.۲
         </div>
       </div>
 
@@ -1622,6 +1786,12 @@ export default function App() {
   const [historyPatient, setHistoryPatient] = useState<Patient | null>(null);
   const [printData, setPrintData] = useState<{ doctor: DoctorProfile, patient: Patient, prescription: Prescription } | null>(null);
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
+  
+  // Phase 5: Print Settings State
+  const [printSettings, setPrintSettings] = useState<PrintSettings>({
+    paperSize: 'a5',
+    showHeader: true
+  });
 
   // Preload drugs for datalist suggestions
   useEffect(() => {
@@ -1676,7 +1846,7 @@ export default function App() {
     setTimeout(() => {
       window.print();
       // Optional cleanup
-      setActivePatient(null); 
+      // setActivePatient(null); 
     }, 500);
   };
 
@@ -1722,7 +1892,7 @@ export default function App() {
       </main>
 
       {/* Hidden Print Container - Only visible during actual print */}
-      <PrintContainer data={printData} />
+      <PrintContainer data={printData} settings={printSettings} />
 
       {/* Modals */}
       <PatientModal 
@@ -1743,6 +1913,8 @@ export default function App() {
         data={printData}
         onClose={() => setIsPreviewOpen(false)}
         onConfirmPrint={confirmPrint}
+        settings={printSettings}
+        onSettingsChange={setPrintSettings}
       />
 
       {/* Global Datalist for Drug Suggestions */}
