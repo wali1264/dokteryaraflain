@@ -168,7 +168,7 @@ const PrescriptionPaper = ({
     );
   }
 
-  // --- FALLBACK: STANDARD LAYOUT (Royal Two-Column) ---
+  // --- FALLBACK: STANDARD LAYOUT (Royal Style) ---
   return (
     <div className="w-full h-full bg-white text-black flex flex-row relative font-sans">
        {/* Sidebar: Vitals & History (Gray Background) */}
@@ -352,7 +352,7 @@ const PrintPreviewModal = ({
                    </div>
                  ) : (
                    <div className="p-3 bg-gray-50 rounded-lg text-xs text-gray-600">
-                      چیدمان استاندارد (Royal Style) استفاده می‌شود. برای تغییر محل فیلدها، به بخش تنظیمات > طراحی نسخه بروید.
+                      چیدمان استاندارد (Royal Style) استفاده می‌شود. برای تغییر محل فیلدها، به بخش تنظیمات &gt; طراحی نسخه بروید.
                    </div>
                  )}
               </div>
@@ -430,7 +430,7 @@ const Navigation = ({ activeTab, onTabChange }: { activeTab: string, onTabChange
           ))}
         </div>
         <div className="p-4 border-t border-gray-100 text-center text-xs text-gray-400">
-          نسخه ۱.۸.۰ (Rotation)
+          نسخه ۱.۸.۲ (Fixes)
         </div>
       </div>
 
@@ -1365,7 +1365,7 @@ const BackupManager = () => {
 };
 
 
-// 2.5 Visual Print Designer (NEW - Phase 7)
+// 2.5 Visual Print Designer (Updated Logic)
 const PrintLayoutDesigner = () => {
   const [profile, setProfile] = useState<DoctorProfile | null>(null);
   const [layout, setLayout] = useState<PrintLayout>({
@@ -1388,10 +1388,18 @@ const PrintLayoutDesigner = () => {
   }, []);
 
   const handleSave = async () => {
-    if (profile) {
-      await dbParams.saveDoctorProfile({ ...profile, printLayout: layout });
-      alert('طراحی نسخه با موفقیت ذخیره شد.');
-    }
+    // If no profile exists yet, create a default one to save layout against
+    const currentProfile = profile || {
+      id: 'profile',
+      fullName: '',
+      specialty: '',
+      medicalCouncilNumber: ''
+    };
+
+    await dbParams.saveDoctorProfile({ ...currentProfile, printLayout: layout });
+    if (!profile) setProfile(currentProfile); // Update local state if it was null
+    
+    alert('طراحی نسخه با موفقیت ذخیره شد.');
   };
 
   const handleReset = () => {
