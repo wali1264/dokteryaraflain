@@ -41,7 +41,7 @@ import {
 } from 'lucide-react';
 import { dbParams, backupSystem } from './db';
 import { Patient, Drug, PrescriptionTemplate, DoctorProfile, PrescriptionItem, VitalSigns, Prescription, PrintLayout, PrintElement } from './types';
-import { DRUG_CATEGORIES, REFERENCE_DRUGS } from './drugReference';
+import { DRUG_CATEGORIES, REFERENCE_DRUGS } from './drugReference.ts';
 
 // --- CONSTANTS ---
 const MM_TO_PX = 3.7795275591; // 1mm in pixels (approx for screen)
@@ -504,7 +504,7 @@ const Navigation = ({ activeTab, onTabChange }: { activeTab: string, onTabChange
           <div className="bg-medical-100 p-2 rounded-full">
             <Stethoscope className="w-8 h-8 text-medical-700" />
           </div>
-          <span className="mr-3 text-xl font-bold text-gray-800">طب‌یار</span>
+          <span className="mr-3 text-xl font-bold text-gray-800">دکتریار</span>
         </div>
         <div className="flex-1 py-6 space-y-2 px-4">
           {navItems.map((item) => (
@@ -523,7 +523,7 @@ const Navigation = ({ activeTab, onTabChange }: { activeTab: string, onTabChange
           ))}
         </div>
         <div className="p-4 border-t border-gray-100 text-center text-xs text-gray-400">
-          نسخه ۱.۹.۵ (Smart Toast)
+          نسخه ۲.۰ (DoctorYar)
         </div>
       </div>
 

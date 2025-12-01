@@ -1,3 +1,4 @@
+
 import { Patient, Drug, PrescriptionTemplate, DoctorProfile, Prescription } from './types';
 
 const DB_NAME = 'TabYarDB';
@@ -183,7 +184,7 @@ export const backupSystem = {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `TabYar_Backup_${new Date().toISOString().slice(0, 10)}.json`;
+    a.download = `DoctorYar_Backup_${new Date().toISOString().slice(0, 10)}.json`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);

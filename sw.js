@@ -1,117 +1,114 @@
 
-const CACHE_NAME = 'tabyar-v5';
+const CACHE_NAME = 'doctoryar-v1'; // Changed name to DoctorYar
 const OFFLINE_URL = '/index.html';
 
-// Critical assets - if these fail, SW installation fails
+// 1. Critical Core Assets (Local files)
 const CORE_ASSETS = [
   '/',
   '/index.html',
   '/manifest.json',
   '/icon-192.png',
-  '/icon-512.png'
+  '/icon-512.png',
+  '/index.tsx',
+  '/App.tsx',
+  '/db.ts',
+  '/types.ts',
+  '/drugReference.ts'
 ];
 
-// Optional assets - try to cache, but don't fail install if they fail
-const EXTERNAL_ASSETS = [
+// 2. External CDN Assets (Libraries defined in importmap)
+// We hardcode these to ensure they are cached immediately upon install
+const CDN_ASSETS = [
   'https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/Vazirmatn-font-face.css',
-  'https://cdn.tailwindcss.com'
+  'https://cdn.tailwindcss.com',
+  'https://aistudiocdn.com/react-dom@^19.2.0/',
+  'https://aistudiocdn.com/react@^19.2.0/',
+  'https://aistudiocdn.com/lucide-react@^0.555.0'
 ];
 
+// Combine all assets
+const ALL_ASSETS = [...CORE_ASSETS, ...CDN_ASSETS];
+
+// --- INSTALL EVENT: Cache Everything Immediately ---
 self.addEventListener('install', (event) => {
-  console.log('[ServiceWorker] Install v5');
-  self.skipWaiting();
+  console.log('[DoctorYar SW] Installing & Caching all assets...');
+  self.skipWaiting(); // Force activation immediately
 
   event.waitUntil(
     caches.open(CACHE_NAME).then(async (cache) => {
-      // 1. Cache Core Assets (Critical)
-      try {
-        await cache.addAll(CORE_ASSETS);
-        console.log('[ServiceWorker] Core assets cached');
-      } catch (error) {
-        console.error('[ServiceWorker] Failed to cache core assets:', error);
-        throw error; // Fail installation if core assets missing
-      }
-
-      // 2. Cache External Assets (Best Effort)
-      // We don't await this or throw, so installation succeeds even if CDNs are flaky
-      cache.addAll(EXTERNAL_ASSETS).catch(err => {
-        console.warn('[ServiceWorker] Failed to cache some external assets:', err);
-      });
+      // We use map to request files one by one to avoid one failure breaking everything
+      // But we wrap in Promise.all to wait for all
+      return Promise.all(
+        ALL_ASSETS.map(url => {
+          return fetch(url).then(res => {
+            if (!res.ok) throw Error(`Failed to fetch ${url}`);
+            return cache.put(url, res);
+          }).catch(err => {
+            console.warn(`[DoctorYar SW] Warning: Could not cache ${url} during install`, err);
+            // We don't throw here to allow partial installation, 
+            // the fetch handler will try to cache it later dynamically.
+          });
+        })
+      );
     })
   );
 });
 
+// --- ACTIVATE EVENT: Clean up old caches ---
 self.addEventListener('activate', (event) => {
-  console.log('[ServiceWorker] Activate v5');
+  console.log('[DoctorYar SW] Activated. Cleaning old caches...');
   event.waitUntil(
     caches.keys().then((keyList) => {
       return Promise.all(
         keyList.map((key) => {
           if (key !== CACHE_NAME) {
-            console.log('[ServiceWorker] Removing old cache', key);
+            console.log('[DoctorYar SW] Removing old cache:', key);
             return caches.delete(key);
           }
         })
       );
-    }).then(() => self.clients.claim())
+    }).then(() => self.clients.claim()) // Take control of all clients immediately
   );
 });
 
+// --- FETCH EVENT: The "Smart" Logic ---
+// Strategy: Cache First, falling back to Network, then Cache that network response.
 self.addEventListener('fetch', (event) => {
-  const request = event.request;
-
   // Only handle GET requests
-  if (request.method !== 'GET') return;
+  if (event.request.method !== 'GET') return;
 
-  // 1. Navigation Requests (HTML) -> Network First, Fallback to Cache
-  if (request.mode === 'navigate') {
-    event.respondWith(
-      fetch(request)
-        .then((networkResponse) => {
-          return caches.open(CACHE_NAME).then((cache) => {
-            cache.put(request, networkResponse.clone());
-            return networkResponse;
-          });
-        })
-        .catch(() => {
-          console.log('[ServiceWorker] Network failed, falling back to cache for:', request.url);
-          return caches.open(CACHE_NAME).then((cache) => {
-            // Try to find exact match
-            return cache.match(OFFLINE_URL).then((cachedResponse) => {
-              if (cachedResponse) return cachedResponse;
-              // Fallback to /index.html if OFFLINE_URL lookup fails
-              return cache.match('/index.html');
-            });
-          });
-        })
-    );
-    return;
-  }
-
-  // 2. Static Assets -> Cache First, Fallback to Network
   event.respondWith(
-    caches.match(request).then((cachedResponse) => {
+    caches.open(CACHE_NAME).then(async (cache) => {
+      // 1. Try to find in Cache first
+      const cachedResponse = await cache.match(event.request);
+      
       if (cachedResponse) {
+        // Return cached response immediately (Fast & Offline friendly)
         return cachedResponse;
       }
 
-      return fetch(request).then((networkResponse) => {
-        // Check for valid response
-        if (!networkResponse || networkResponse.status !== 200 || networkResponse.type !== 'basic' && networkResponse.type !== 'cors') {
-          return networkResponse;
+      // 2. If not in cache, go to Network
+      try {
+        const networkResponse = await fetch(event.request);
+
+        // Check if response is valid
+        if (networkResponse && networkResponse.status === 200) {
+          // 3. Cache the new file for next time (Dynamic Caching)
+          cache.put(event.request, networkResponse.clone());
         }
 
-        // Cache new asset
-        const responseToCache = networkResponse.clone();
-        caches.open(CACHE_NAME).then((cache) => {
-          cache.put(request, responseToCache);
-        });
-
         return networkResponse;
-      }).catch(err => {
-        // If both cache and network fail for an asset (e.g. image), just fail silently or return placeholder
-        // console.log('Asset fetch failed:', request.url);
-      });
+      } catch (error) {
+        // 4. Network failed (Offline). 
+        // If it was a navigation request (HTML), return index.html
+        if (event.request.mode === 'navigate') {
+          return cache.match(OFFLINE_URL);
+        }
+        
+        // Otherwise, nothing we can do
+        console.error('[DoctorYar SW] Fetch failed (Offline):', event.request.url);
+        throw error;
+      }
     })
   );
 });

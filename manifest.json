@@ -1,6 +1,7 @@
+
 {
-  "name": "طب‌یار | دستیار هوشمند پزشک",
-  "short_name": "طب‌یار",
+  "name": "دکتریار | دستیار هوشمند پزشک",
+  "short_name": "دکتریار",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#FEFDF5",
