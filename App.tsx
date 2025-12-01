@@ -31,199 +31,239 @@ import {
   Image as ImageIcon,
   CheckCircle,
   UserPlus,
-  Maximize2,
-  Minimize2,
-  Eye,
-  EyeOff
+  Move,
+  LayoutTemplate,
+  RotateCw
 } from 'lucide-react';
 import { dbParams, backupSystem } from './db';
-import { Patient, Drug, PrescriptionTemplate, DoctorProfile, PrescriptionItem, VitalSigns, Prescription } from './types';
+import { Patient, Drug, PrescriptionTemplate, DoctorProfile, PrescriptionItem, VitalSigns, Prescription, PrintLayout, PrintElement } from './types';
 
-// --- TYPES FOR PRINT SETTINGS ---
-interface PrintSettings {
-  paperSize: 'a4' | 'a5';
-  showHeader: boolean;
-}
+// --- CONSTANTS ---
+const MM_TO_PX = 3.7795275591; // 1mm in pixels (approx for screen)
+
+const DEFAULT_PRINT_ELEMENTS: { [key: string]: PrintElement } = {
+  patientName: { id: 'patientName', label: 'نام بیمار', x: 100, y: 40, visible: true, width: 40, fontSize: 12, rotation: 0 },
+  patientAge: { id: 'patientAge', label: 'سن', x: 130, y: 40, visible: true, width: 10, fontSize: 12, rotation: 0 },
+  patientWeight: { id: 'patientWeight', label: 'وزن', x: 10, y: 40, visible: true, width: 15, fontSize: 12, rotation: 0 },
+  date: { id: 'date', label: 'تاریخ', x: 10, y: 20, visible: true, width: 30, fontSize: 12, rotation: 0 },
+  vitalBP: { id: 'vitalBP', label: 'فشار (BP)', x: 110, y: 60, visible: true, width: 15, fontSize: 10, rotation: 0 },
+  vitalPR: { id: 'vitalPR', label: 'ضربان (PR)', x: 110, y: 65, visible: true, width: 15, fontSize: 10, rotation: 0 },
+  vitalRR: { id: 'vitalRR', label: 'تنفس (RR)', x: 110, y: 70, visible: true, width: 15, fontSize: 10, rotation: 0 },
+  vitalTemp: { id: 'vitalTemp', label: 'دما (T)', x: 110, y: 75, visible: true, width: 15, fontSize: 10, rotation: 0 },
+  diagnosis: { id: 'diagnosis', label: 'تشخیص', x: 10, y: 50, visible: true, width: 80, fontSize: 12, rotation: 0 },
+  rxItems: { id: 'rxItems', label: 'اقلام دارویی', x: 10, y: 90, visible: true, width: 130, fontSize: 12, rotation: 0 },
+};
 
 // --- SHARED COMPONENTS ---
 
-// 0. Prescription Paper (Reusable UI for both Preview and Print)
-// ROYAL TWO-COLUMN LAYOUT
+// 0. Prescription Paper (Engine)
 const PrescriptionPaper = ({ 
   data,
-  settings
+  printSettings
 }: { 
   data: { 
     doctor: DoctorProfile, 
     patient: Patient, 
     prescription: Prescription 
   },
-  settings: PrintSettings
+  printSettings?: { showBackground: boolean }
 }) => {
   const { doctor, patient, prescription } = data;
-  
-  // Dimensions based on settings
-  // A5: 148mm x 210mm
-  // A4: 210mm x 297mm
-  const containerStyle = {
-    width: settings.paperSize === 'a5' ? '148mm' : '210mm',
-    height: settings.paperSize === 'a5' ? '210mm' : '297mm',
-    // In preview mode, we might scale this. In print mode, it fills the page if setup correctly.
-  };
+  const layout = doctor.printLayout;
+  const showBackground = printSettings?.showBackground ?? false;
 
-  return (
-    <div 
-      style={containerStyle} 
-      className="bg-white text-black relative flex flex-col mx-auto overflow-hidden border-2 border-gray-800"
-    >
-      {/* Header Section */}
-      {settings.showHeader && (
-        <div className="flex justify-between items-center p-4 border-b-2 border-gray-800 bg-white z-10 relative h-[15%]">
-          {/* Doctor Info (Right - RTL) */}
-          <div className="text-right w-2/3">
-             <h1 className="text-2xl font-black mb-1 font-serif tracking-tight">{doctor.fullName}</h1>
-             <p className="font-bold text-gray-700 text-sm">{doctor.specialty}</p>
-             <div className="mt-2 flex gap-4 text-xs font-mono text-gray-600">
-               <span>N.P: {doctor.medicalCouncilNumber}</span>
-               <span>Tel: {doctor.phoneNumber}</span>
-             </div>
-          </div>
-          
-          {/* Logo (Left - LTR position visually) */}
-          <div className="w-1/3 flex justify-end">
-             {doctor.logo ? (
-               <img src={doctor.logo} alt="Logo" className="max-h-20 object-contain" />
-             ) : (
-               <div className="w-16 h-16 border-2 border-gray-300 rounded-full flex items-center justify-center">
-                 <Stethoscope className="w-8 h-8 text-gray-300" />
-               </div>
-             )}
-          </div>
+  // --- CUSTOM LAYOUT RENDERER ---
+  if (layout) {
+    const paperWidth = layout.paperSize === 'A4' ? 210 : 148;
+    const paperHeight = layout.paperSize === 'A4' ? 297 : 210;
+    const els = layout.elements;
+
+    const renderElement = (key: string, content: React.ReactNode) => {
+      const el = els[key];
+      if (!el || !el.visible) return null;
+      return (
+        <div
+          key={key}
+          style={{
+            position: 'absolute',
+            left: `${el.x}mm`,
+            top: `${el.y}mm`,
+            width: el.width ? `${el.width}mm` : 'auto',
+            fontSize: `${el.fontSize}pt`,
+            whiteSpace: key === 'rxItems' ? 'normal' : 'nowrap',
+            direction: 'rtl',
+            textAlign: 'right',
+            transform: `rotate(${el.rotation || 0}deg)`,
+            transformOrigin: 'center center'
+          }}
+        >
+          {content}
         </div>
-      )}
+      );
+    };
 
-      {/* Main Body - Two Columns */}
-      <div className="flex flex-row flex-1 h-[85%]">
+    return (
+      <div 
+        className="relative overflow-hidden bg-white text-black"
+        style={{
+          width: `${paperWidth}mm`,
+          height: `${paperHeight}mm`,
+          direction: 'ltr' // Coordinate system starts top-left
+        }}
+      >
+        {/* Background Image (For printing on plain paper if requested) */}
+        {layout.backgroundImage && showBackground && (
+          <img 
+            src={layout.backgroundImage} 
+            className="absolute inset-0 w-full h-full object-cover z-0 opacity-50 print:opacity-100" 
+            alt="" 
+          />
+        )}
+
+        {/* Dynamic Elements */}
+        {renderElement('patientName', patient.fullName)}
+        {renderElement('patientAge', `${patient.age}`)}
+        {renderElement('patientWeight', prescription.vitalSigns.weight ? `${prescription.vitalSigns.weight}` : '')}
+        {renderElement('date', new Date(prescription.date).toLocaleDateString('fa-IR'))}
         
-        {/* RIGHT COLUMN (Main Content - Rx) - 72% Width */}
-        <div className="w-[72%] p-5 flex flex-col relative">
-           {/* Date Top Right */}
-           <div className="absolute top-4 left-4 text-xs font-mono border border-gray-400 px-2 py-1 rounded">
-              Date: {new Date(prescription.date).toLocaleDateString('fa-IR')}
-           </div>
-
-           {/* Rx Symbol */}
-           <div className="mt-6 mb-4">
-             <span className="text-5xl font-serif italic font-black text-gray-800">Rx</span>
-           </div>
-
-           {/* Items List */}
-           <div className="flex-1">
-             <ul className="space-y-4">
-               {prescription.items.map((item, idx) => (
-                 <li key={item.id} className="flex flex-col border-b border-gray-200 pb-2 last:border-0">
-                   <div className="flex justify-between items-baseline">
-                     <div className="flex items-baseline gap-2">
-                       <span className="font-bold text-gray-500 text-sm w-5">{idx + 1}.</span>
-                       <span className="font-bold text-lg">{item.drugName}</span>
-                     </div>
-                     <span className="font-mono text-lg font-bold text-gray-700 dir-ltr">{item.dosage}</span>
-                   </div>
-                   {item.instruction && (
-                     <div className="text-sm text-gray-600 pr-7 mt-0.5 font-medium">{item.instruction}</div>
-                   )}
-                 </li>
-               ))}
-             </ul>
-           </div>
-
-           {/* Diagnosis Footer */}
-           {prescription.diagnosis && (
-             <div className="mt-4 pt-4 border-t-2 border-gray-800">
-                <span className="font-bold text-sm bg-gray-800 text-white px-2 py-0.5 rounded-sm ml-2">Dx:</span>
-                <span className="font-bold text-gray-800">{prescription.diagnosis}</span>
-             </div>
-           )}
-
-           {/* Signature Space */}
-           <div className="mt-8 flex justify-end">
-              <div className="text-center w-32">
-                 <div className="h-16"></div>
-                 <div className="border-t border-gray-400 pt-1 text-xs text-gray-500">Signature</div>
-              </div>
-           </div>
-        </div>
-
-        {/* LEFT COLUMN (Sidebar - Vitals & Patient) - 28% Width */}
-        {/* We use order-last in RTL to make it appear on the LEFT side visually */}
-        <div className="w-[28%] bg-gray-100 border-r-2 border-gray-800 p-3 flex flex-col gap-6 text-sm order-last print-color-adjust-exact">
-           
-           {/* Patient Info Block */}
-           <div className="flex flex-col gap-2">
-             <div className="border-b border-gray-400 pb-1 mb-1 font-bold text-gray-700">Patient Info</div>
-             <div>
-               <span className="block text-xs text-gray-500">Name:</span>
-               <span className="font-bold block text-base truncate">{patient.fullName}</span>
-             </div>
-             <div className="flex gap-2">
-                <div className="flex-1">
-                  <span className="block text-xs text-gray-500">Age:</span>
-                  <span className="font-bold">{patient.age}</span>
-                </div>
-                <div className="flex-1">
-                  <span className="block text-xs text-gray-500">Sex:</span>
-                  <span className="font-bold">{patient.gender === 'male' ? 'M' : 'F'}</span>
-                </div>
-             </div>
-             {prescription.vitalSigns.weight && (
-               <div>
-                  <span className="block text-xs text-gray-500">Weight:</span>
-                  <span className="font-bold">{prescription.vitalSigns.weight} kg</span>
-               </div>
-             )}
-           </div>
-
-           {/* Vitals Block */}
-           <div className="flex flex-col gap-3">
-             <div className="border-b border-gray-400 pb-1 mb-1 font-bold text-gray-700">Clinical Records</div>
-             
-             {prescription.vitalSigns.bp && (
-               <div className="flex justify-between items-center bg-white p-1 rounded border border-gray-200">
-                 <span className="font-bold text-xs text-gray-500">BP</span>
-                 <span className="font-mono font-bold">{prescription.vitalSigns.bp}</span>
-               </div>
-             )}
-             
-             {prescription.vitalSigns.pr && (
-               <div className="flex justify-between items-center bg-white p-1 rounded border border-gray-200">
-                 <span className="font-bold text-xs text-gray-500">PR</span>
-                 <span className="font-mono font-bold">{prescription.vitalSigns.pr}</span>
-               </div>
-             )}
-
-             {prescription.vitalSigns.rr && (
-               <div className="flex justify-between items-center bg-white p-1 rounded border border-gray-200">
-                 <span className="font-bold text-xs text-gray-500">RR</span>
-                 <span className="font-mono font-bold">{prescription.vitalSigns.rr}</span>
-               </div>
-             )}
-
-             {prescription.vitalSigns.temp && (
-               <div className="flex justify-between items-center bg-white p-1 rounded border border-gray-200">
-                 <span className="font-bold text-xs text-gray-500">T</span>
-                 <span className="font-mono font-bold">{prescription.vitalSigns.temp}°</span>
-               </div>
-             )}
-           </div>
-           
-           {/* Address Footer in Sidebar */}
-           <div className="mt-auto pt-4 text-[9px] text-gray-500 leading-tight text-center border-t border-gray-300">
-              {doctor.address}
-           </div>
-
-        </div>
-
+        {renderElement('vitalBP', prescription.vitalSigns.bp)}
+        {renderElement('vitalPR', prescription.vitalSigns.pr)}
+        {renderElement('vitalRR', prescription.vitalSigns.rr)}
+        {renderElement('vitalTemp', prescription.vitalSigns.temp)}
+        
+        {renderElement('diagnosis', prescription.diagnosis)}
+        
+        {/* Rx Items List */}
+        {els['rxItems']?.visible && (
+          <div
+            style={{
+              position: 'absolute',
+              left: `${els['rxItems'].x}mm`,
+              top: `${els['rxItems'].y}mm`,
+              width: `${els['rxItems'].width}mm`,
+              fontSize: `${els['rxItems'].fontSize}pt`,
+              direction: 'rtl',
+              textAlign: 'right',
+              transform: `rotate(${els['rxItems'].rotation || 0}deg)`,
+              transformOrigin: 'center center'
+            }}
+          >
+            <ul className="space-y-2">
+              {prescription.items.map((item, idx) => (
+                <li key={item.id} className="flex gap-2 items-baseline">
+                  <span className="font-bold w-4">{idx + 1}.</span>
+                  <div className="flex-1">
+                    <div className="font-bold flex justify-between">
+                       <span>{item.drugName}</span>
+                       <span className="font-mono text-lg" style={{direction: 'ltr'}}>{item.dosage}</span>
+                    </div>
+                    {item.instruction && <div className="text-xs">{item.instruction}</div>}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
       </div>
+    );
+  }
+
+  // --- FALLBACK: STANDARD LAYOUT (Royal Two-Column) ---
+  return (
+    <div className="w-full h-full bg-white text-black flex flex-row relative font-sans">
+       {/* Sidebar: Vitals & History (Gray Background) */}
+       <div className="w-[45mm] bg-gray-100 h-full flex flex-col p-4 border-l border-gray-300 print:bg-gray-100 print:print-color-adjust-exact">
+          {/* Logo/Name Area */}
+          <div className="mb-6 text-center">
+             {doctor.logo && <img src={doctor.logo} className="w-16 h-16 mx-auto object-contain mb-2 mix-blend-multiply"/>}
+             <div className="font-bold text-sm">{doctor.fullName}</div>
+             <div className="text-xs text-gray-500">{doctor.specialty}</div>
+          </div>
+
+          <div className="space-y-6">
+             {/* Patient Small Block */}
+             <div>
+                <div className="text-[10px] uppercase text-gray-400 font-bold mb-1">Patient</div>
+                <div className="font-bold text-sm leading-tight">{patient.fullName}</div>
+                <div className="text-xs text-gray-600 mt-1">{patient.age} ساله</div>
+                <div className="text-xs text-gray-600 font-mono mt-1">{new Date(prescription.date).toLocaleDateString('fa-IR')}</div>
+             </div>
+
+             {/* Vitals */}
+             <div>
+                <div className="text-[10px] uppercase text-gray-400 font-bold mb-2">Vitals</div>
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                   <div>
+                     <span className="text-gray-400 block text-[9px]">BP</span>
+                     <span className="font-mono font-bold">{prescription.vitalSigns.bp || '-'}</span>
+                   </div>
+                   <div>
+                     <span className="text-gray-400 block text-[9px]">PR</span>
+                     <span className="font-mono font-bold">{prescription.vitalSigns.pr || '-'}</span>
+                   </div>
+                   <div>
+                     <span className="text-gray-400 block text-[9px]">RR</span>
+                     <span className="font-mono font-bold">{prescription.vitalSigns.rr || '-'}</span>
+                   </div>
+                   <div>
+                     <span className="text-gray-400 block text-[9px]">Temp</span>
+                     <span className="font-mono font-bold">{prescription.vitalSigns.temp || '-'}</span>
+                   </div>
+                   <div className="col-span-2">
+                     <span className="text-gray-400 block text-[9px]">Weight</span>
+                     <span className="font-mono font-bold">{prescription.vitalSigns.weight || '-'} kg</span>
+                   </div>
+                </div>
+             </div>
+
+             {/* Diagnosis */}
+             {prescription.diagnosis && (
+               <div>
+                  <div className="text-[10px] uppercase text-gray-400 font-bold mb-1">Diagnosis</div>
+                  <div className="text-xs font-bold leading-tight">{prescription.diagnosis}</div>
+               </div>
+             )}
+          </div>
+       </div>
+
+       {/* Main Content: Rx (White) */}
+       <div className="flex-1 p-6 flex flex-col">
+          {/* Rx Header */}
+          <div className="mb-6 flex justify-between items-start">
+             <span className="text-5xl font-serif italic font-bold text-gray-800">Rx</span>
+             <div className="text-right text-[10px] text-gray-400">
+               <div>N.M.C: {doctor.medicalCouncilNumber}</div>
+               <div style={{direction:'ltr'}}>{doctor.phoneNumber}</div>
+             </div>
+          </div>
+
+          {/* Rx Items */}
+          <ul className="space-y-4 flex-1">
+            {prescription.items.map((item, idx) => (
+              <li key={item.id} className="border-b border-gray-100 pb-2 last:border-0">
+                <div className="flex justify-between items-baseline mb-1">
+                   <div className="flex gap-2">
+                     <span className="font-bold text-gray-300 text-sm">{idx + 1}</span>
+                     <span className="font-bold text-lg">{item.drugName}</span>
+                   </div>
+                   <span className="font-mono font-bold text-lg">{item.dosage}</span>
+                </div>
+                {item.instruction && <div className="text-sm text-gray-600 mr-6">{item.instruction}</div>}
+              </li>
+            ))}
+          </ul>
+
+          {/* Footer */}
+          <div className="mt-auto pt-8 flex justify-between items-end">
+             <div className="text-[10px] text-gray-400 max-w-[60%]">
+                {doctor.address}
+             </div>
+             <div className="text-center">
+                <div className="h-16 w-32 border-b border-gray-300 mb-1"></div>
+                <span className="text-[10px] text-gray-400 uppercase">Doctor's Signature</span>
+             </div>
+          </div>
+       </div>
     </div>
   );
 };
@@ -231,20 +271,20 @@ const PrescriptionPaper = ({
 // 0.1 Print Container (Hidden in UI, Visible in Print)
 const PrintContainer = ({ 
   data,
-  settings
+  printSettings
 }: { 
   data: { 
     doctor: DoctorProfile, 
     patient: Patient, 
     prescription: Prescription 
   } | null,
-  settings: PrintSettings
+  printSettings: { showBackground: boolean }
 }) => {
   if (!data) return null;
   
   return (
-    <div id="print-container" className="flex justify-center items-start pt-0">
-      <PrescriptionPaper data={data} settings={settings} />
+    <div id="print-container">
+      <PrescriptionPaper data={data} printSettings={printSettings} />
     </div>
   );
 };
@@ -254,123 +294,106 @@ const PrintPreviewModal = ({
   data,
   isOpen,
   onClose,
-  onConfirmPrint,
-  settings,
-  onSettingsChange
+  onConfirmPrint
 }: {
   data: { doctor: DoctorProfile, patient: Patient, prescription: Prescription } | null,
   isOpen: boolean,
   onClose: () => void,
-  onConfirmPrint: () => void,
-  settings: PrintSettings,
-  onSettingsChange: (s: PrintSettings) => void
+  onConfirmPrint: (settings: { showBackground: boolean }) => void
 }) => {
+  const [showBackground, setShowBackground] = useState(false);
+
   if (!isOpen || !data) return null;
+  const hasCustomLayout = !!data.doctor.printLayout;
 
   return (
-    <div className="fixed inset-0 bg-gray-900/90 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-hidden no-print">
-      <div className="bg-white rounded-2xl w-full max-w-6xl h-[95vh] flex flex-col shadow-2xl overflow-hidden">
+    <div className="fixed inset-0 bg-gray-900/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-hidden no-print">
+      <div className="bg-gray-100 rounded-2xl w-full max-w-5xl h-[95vh] flex flex-col shadow-2xl overflow-hidden">
         {/* Modal Header */}
-        <div className="p-4 bg-gray-50 border-b border-gray-200 flex justify-between items-center">
-          <div className="flex items-center gap-2">
-            <div className="bg-medical-100 p-2 rounded-lg">
-              <Printer className="w-5 h-5 text-medical-700" />
-            </div>
-            <div>
-              <h3 className="font-bold text-lg text-gray-800">پیش‌نمایش و تنظیمات چاپ</h3>
-              <p className="text-xs text-gray-500">قبل از چاپ، ظاهر نسخه را بررسی کنید</p>
-            </div>
-          </div>
-          <button onClick={onClose} className="p-2 hover:bg-gray-200 rounded-full transition-colors">
+        <div className="p-4 bg-white border-b border-gray-200 flex justify-between items-center">
+          <h3 className="font-bold text-lg text-gray-800 flex items-center gap-2">
+            <Printer className="w-5 h-5 text-medical-700" />
+            پیش‌نمایش چاپ
+          </h3>
+          <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-full transition-colors">
             <X className="w-6 h-6 text-gray-500" />
           </button>
         </div>
 
-        <div className="flex flex-col md:flex-row flex-1 overflow-hidden">
-          
-          {/* Controls Panel (Left Side in RTL) */}
-          <div className="w-full md:w-80 bg-white border-l border-gray-200 p-6 flex flex-col gap-6 overflow-y-auto">
-             
-             <div className="space-y-4">
-               <h4 className="font-bold text-gray-700 border-b border-gray-100 pb-2">تنظیمات کاغذ</h4>
-               
-               <div className="flex flex-col gap-2">
-                 <label className="text-sm text-gray-600 mb-1">اندازه کاغذ:</label>
-                 <div className="flex bg-gray-100 p-1 rounded-xl">
-                   <button
-                     onClick={() => onSettingsChange({...settings, paperSize: 'a5'})}
-                     className={`flex-1 py-2 px-4 rounded-lg text-sm font-bold transition-all ${
-                       settings.paperSize === 'a5' 
-                         ? 'bg-white text-medical-700 shadow-sm' 
-                         : 'text-gray-500 hover:text-gray-700'
-                     }`}
-                   >
-                     A5 (استاندارد)
-                   </button>
-                   <button
-                     onClick={() => onSettingsChange({...settings, paperSize: 'a4'})}
-                     className={`flex-1 py-2 px-4 rounded-lg text-sm font-bold transition-all ${
-                       settings.paperSize === 'a4' 
-                         ? 'bg-white text-medical-700 shadow-sm' 
-                         : 'text-gray-500 hover:text-gray-700'
-                     }`}
-                   >
-                     A4
-                   </button>
-                 </div>
-               </div>
-             </div>
+        <div className="flex flex-1 overflow-hidden">
+           {/* Controls Sidebar */}
+           <div className="w-64 bg-white border-l border-gray-200 p-4 flex flex-col gap-6 overflow-y-auto">
+              <div>
+                 <h4 className="font-bold text-gray-700 mb-3 text-sm">تنظیمات چاپ</h4>
+                 
+                 {hasCustomLayout ? (
+                   <div className="space-y-3">
+                      <div className="p-3 bg-blue-50 rounded-lg text-xs text-blue-800 border border-blue-100">
+                         چیدمان سفارشی فعال است.
+                      </div>
+                      
+                      {data.doctor.printLayout?.backgroundImage && (
+                        <label className="flex items-center gap-2 cursor-pointer p-2 hover:bg-gray-50 rounded-lg">
+                          <input 
+                            type="checkbox" 
+                            checked={showBackground} 
+                            onChange={e => setShowBackground(e.target.checked)}
+                            className="w-4 h-4 rounded text-medical-600 focus:ring-medical-500"
+                          />
+                          <span className="text-sm">چاپ تصویر پس‌زمینه (سربرگ)</span>
+                        </label>
+                      )}
+                      
+                      <p className="text-xs text-gray-400 mt-2">
+                         * اگر از کاغذ سفید استفاده می‌کنید، تیک بالا را بزنید تا سربرگ هم چاپ شود.
+                         <br/>
+                         * اگر کاغذ سربرگ‌دار در پرینتر دارید، تیک را بردارید.
+                      </p>
+                   </div>
+                 ) : (
+                   <div className="p-3 bg-gray-50 rounded-lg text-xs text-gray-600">
+                      چیدمان استاندارد (Royal Style) استفاده می‌شود. برای تغییر محل فیلدها، به بخش تنظیمات > طراحی نسخه بروید.
+                   </div>
+                 )}
+              </div>
+           </div>
 
-             <div className="space-y-4">
-               <h4 className="font-bold text-gray-700 border-b border-gray-100 pb-2">ظاهر نسخه</h4>
-               
-               <div className="flex items-center justify-between bg-gray-50 p-3 rounded-xl border border-gray-100">
-                 <div className="flex items-center gap-2">
-                    {settings.showHeader ? <Eye className="w-4 h-4 text-blue-600"/> : <EyeOff className="w-4 h-4 text-gray-400"/>}
-                    <span className="text-sm font-medium text-gray-700">نمایش سربرگ</span>
-                 </div>
-                 <button 
-                   onClick={() => onSettingsChange({...settings, showHeader: !settings.showHeader})}
-                   className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${settings.showHeader ? 'bg-medical-500' : 'bg-gray-300'}`}
-                 >
-                   <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${settings.showHeader ? '-translate-x-6' : '-translate-x-1'}`} />
-                 </button>
-               </div>
-               <p className="text-xs text-gray-400 leading-relaxed">
-                 اگر از کاغذهای سربرگ‌دار آماده استفاده می‌کنید، گزینه "نمایش سربرگ" را خاموش کنید تا روی لوگوی شما چاپ نشود.
-               </p>
-             </div>
-
-             <div className="mt-auto pt-6 border-t border-gray-100">
-                <button 
-                  onClick={onConfirmPrint}
-                  className="w-full py-4 bg-gray-900 text-white font-bold rounded-xl hover:bg-black shadow-lg flex items-center justify-center gap-3 transition-transform hover:scale-[1.02]"
-                >
-                  <Printer className="w-5 h-5" />
-                  تایید و چاپ
-                </button>
-             </div>
-          </div>
-
-          {/* Preview Area (Right Side in RTL) */}
-          <div className="flex-1 bg-gray-200 overflow-auto p-8 flex justify-center items-start">
+           {/* Preview Area */}
+           <div className="flex-1 overflow-y-auto p-8 flex justify-center bg-gray-200 relative">
              <div 
-               className="bg-white shadow-2xl transition-all duration-300 origin-top"
-               style={{
-                 transform: 'scale(0.85)', // Scale down slightly to fit visual area
+               className="bg-white shadow-2xl transition-transform origin-top scale-75 md:scale-100 origin-top"
+               style={{ 
+                 width: data.doctor.printLayout?.paperSize === 'A4' ? '210mm' : '148mm', 
+                 minHeight: data.doctor.printLayout?.paperSize === 'A4' ? '297mm' : '210mm' 
                }}
              >
-                <PrescriptionPaper data={data} settings={settings} />
+                <PrescriptionPaper data={data} printSettings={{ showBackground }} />
              </div>
-          </div>
+           </div>
+        </div>
 
+        {/* Modal Footer */}
+        <div className="p-4 bg-white border-t border-gray-200 flex justify-end gap-3">
+             <button 
+               onClick={onClose}
+               className="px-6 py-3 border border-gray-300 text-gray-700 font-bold rounded-xl hover:bg-gray-50 transition-colors"
+             >
+               انصراف
+             </button>
+             <button 
+               onClick={() => onConfirmPrint({ showBackground })}
+               className="px-8 py-3 bg-medical-700 text-white font-bold rounded-xl hover:bg-medical-900 shadow-lg shadow-medical-500/30 flex items-center gap-2"
+             >
+               <Printer className="w-5 h-5" />
+               تایید و چاپ
+             </button>
         </div>
       </div>
     </div>
   );
 };
 
-// 1. Navigation
+// 1. Navigation (Unchanged)
 const Navigation = ({ activeTab, onTabChange }: { activeTab: string, onTabChange: (tab: string) => void }) => {
   const navItems = [
     { id: 'dashboard', label: 'میز کار', icon: LayoutDashboard }, 
@@ -407,7 +430,7 @@ const Navigation = ({ activeTab, onTabChange }: { activeTab: string, onTabChange
           ))}
         </div>
         <div className="p-4 border-t border-gray-100 text-center text-xs text-gray-400">
-          نسخه ۱.۶.۲
+          نسخه ۱.۸.۰ (Rotation)
         </div>
       </div>
 
@@ -430,7 +453,7 @@ const Navigation = ({ activeTab, onTabChange }: { activeTab: string, onTabChange
   );
 };
 
-// 1.5 History Modal
+// 1.5 History Modal (Unchanged)
 const PatientHistoryModal = ({ 
   patient, 
   isOpen, 
@@ -481,16 +504,14 @@ const PatientHistoryModal = ({
                     <div className="absolute left-4 top-4 text-xs text-gray-400 flex items-center gap-1">
                        <Calendar className="w-3 h-3" />
                        {new Date(record.date).toLocaleDateString('fa-IR')}
-                       <Clock className="w-3 h-3 mr-2" />
-                       {new Date(record.date).toLocaleTimeString('fa-IR', {hour: '2-digit', minute:'2-digit'})}
                     </div>
 
                     <h4 className="font-bold text-gray-800 mb-2">تشخیص: {record.diagnosis || '---'}</h4>
                     
                     <div className="flex gap-4 text-xs text-gray-500 mb-4 bg-gray-50 p-2 rounded-lg inline-flex">
                        {record.vitalSigns.bp && <span>BP: {record.vitalSigns.bp}</span>}
+                       {record.vitalSigns.rr && <span>RR: {record.vitalSigns.rr}</span>}
                        {record.vitalSigns.weight && <span>وزن: {record.vitalSigns.weight}</span>}
-                       {record.vitalSigns.temp && <span>دما: {record.vitalSigns.temp}</span>}
                     </div>
 
                     <div className="space-y-1">
@@ -511,7 +532,7 @@ const PatientHistoryModal = ({
   );
 };
 
-// 2. Patient Modal
+// 2. Patient Modal (Unchanged)
 const PatientModal = ({ 
   isOpen, 
   onClose, 
@@ -676,7 +697,7 @@ const PatientModal = ({
   );
 };
 
-// 3. Patients View
+// 3. Patients View (Unchanged)
 const PatientsView = ({ 
   onEdit, 
   onSelect, 
@@ -955,7 +976,7 @@ const DoctorProfileSettings = () => {
   );
 };
 
-// 2.2 Drugs Manager
+// 2.2 Drugs Manager (Unchanged)
 const DrugsManager = () => {
   const [drugs, setDrugs] = useState<Drug[]>([]);
   const [search, setSearch] = useState('');
@@ -1083,7 +1104,7 @@ const DrugsManager = () => {
   );
 };
 
-// 2.3 Templates Manager
+// 2.3 Templates Manager (Unchanged)
 const TemplatesManager = () => {
   const [templates, setTemplates] = useState<PrescriptionTemplate[]>([]);
   const [editingTemplate, setEditingTemplate] = useState<PrescriptionTemplate | null>(null);
@@ -1268,7 +1289,7 @@ const TemplatesManager = () => {
   );
 };
 
-// 2.4 Backup Manager
+// 2.4 Backup Manager (Unchanged)
 const BackupManager = () => {
   const handleBackup = async () => {
     await backupSystem.exportData();
@@ -1344,12 +1365,276 @@ const BackupManager = () => {
 };
 
 
-// 4. Settings View Container
-const SettingsView = () => {
-  const [activeSubTab, setActiveSubTab] = useState<'profile' | 'backup'>('profile');
+// 2.5 Visual Print Designer (NEW - Phase 7)
+const PrintLayoutDesigner = () => {
+  const [profile, setProfile] = useState<DoctorProfile | null>(null);
+  const [layout, setLayout] = useState<PrintLayout>({
+    paperSize: 'A5',
+    elements: DEFAULT_PRINT_ELEMENTS
+  });
+  const [selectedElementId, setSelectedElementId] = useState<string | null>(null);
+  
+  const containerRef = useRef<HTMLDivElement>(null);
+  const dragStartRef = useRef<{ x: number, y: number } | null>(null);
+  const initialPosRef = useRef<{ x: number, y: number } | null>(null);
+
+  useEffect(() => {
+    dbParams.getDoctorProfile().then(p => {
+      if (p) {
+        setProfile(p);
+        if (p.printLayout) setLayout(p.printLayout);
+      }
+    });
+  }, []);
+
+  const handleSave = async () => {
+    if (profile) {
+      await dbParams.saveDoctorProfile({ ...profile, printLayout: layout });
+      alert('طراحی نسخه با موفقیت ذخیره شد.');
+    }
+  };
+
+  const handleReset = () => {
+    if(confirm('آیا مطمئن هستید؟ تمام تغییرات شما به حالت پیش‌فرض برمی‌گردد.')) {
+       setLayout({ paperSize: 'A5', elements: DEFAULT_PRINT_ELEMENTS });
+    }
+  };
+
+  const handleBgUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setLayout(prev => ({ ...prev, backgroundImage: reader.result as string }));
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const rotateElement = (id: string) => {
+    setLayout(prev => {
+      const currentRotation = prev.elements[id].rotation || 0;
+      return {
+        ...prev,
+        elements: {
+          ...prev.elements,
+          [id]: { ...prev.elements[id], rotation: (currentRotation + 90) % 360 }
+        }
+      };
+    });
+  };
+
+  // Dragging Logic
+  const handleMouseDown = (e: React.MouseEvent, id: string) => {
+    e.stopPropagation();
+    setSelectedElementId(id);
+    dragStartRef.current = { x: e.clientX, y: e.clientY };
+    initialPosRef.current = { x: layout.elements[id].x, y: layout.elements[id].y };
+  };
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (selectedElementId && dragStartRef.current && initialPosRef.current) {
+      const dxPx = e.clientX - dragStartRef.current.x;
+      const dyPx = e.clientY - dragStartRef.current.y;
+      
+      const dxMm = -dxPx / MM_TO_PX; // Reversed because dragging in RTL usually feels weird, but here coordinate system is usually LTR based for absolute. Let's stick to LTR coord.
+      // Actually, since we are using LTR for container in PrescriptionPaper logic, let's use LTR math.
+      // BUT, page is RTL. Let's enforce LTR for the canvas container to make math easy.
+      
+      const newX = initialPosRef.current.x + (dxPx / MM_TO_PX);
+      const newY = initialPosRef.current.y + (dyPx / MM_TO_PX);
+
+      setLayout(prev => ({
+        ...prev,
+        elements: {
+          ...prev.elements,
+          [selectedElementId]: {
+            ...prev.elements[selectedElementId],
+            x: Math.max(0, newX),
+            y: Math.max(0, newY)
+          }
+        }
+      }));
+    }
+  };
+
+  const handleMouseUp = () => {
+    dragStartRef.current = null;
+    initialPosRef.current = null;
+  };
+
+  // Canvas Dimensions
+  const paperWidthMm = layout.paperSize === 'A4' ? 210 : 148;
+  const paperHeightMm = layout.paperSize === 'A4' ? 297 : 210;
 
   return (
-    <div className="max-w-6xl mx-auto p-4 md:p-8 h-screen md:h-auto flex flex-col">
+    <div className="flex flex-col h-[calc(100vh-100px)]">
+      <div className="bg-white p-4 border-b border-gray-200 flex justify-between items-center">
+        <div className="flex items-center gap-4">
+           <h2 className="font-bold text-lg flex items-center gap-2">
+             <LayoutTemplate className="w-5 h-5 text-medical-700"/>
+             طراحی سربرگ و چیدمان نسخه
+           </h2>
+           <div className="flex bg-gray-100 rounded-lg p-1 text-xs font-bold">
+              <button 
+                onClick={() => setLayout(prev => ({...prev, paperSize: 'A5'}))}
+                className={`px-3 py-1 rounded ${layout.paperSize === 'A5' ? 'bg-white shadow text-medical-700' : 'text-gray-500'}`}
+              >
+                کاغذ A5
+              </button>
+              <button 
+                onClick={() => setLayout(prev => ({...prev, paperSize: 'A4'}))}
+                className={`px-3 py-1 rounded ${layout.paperSize === 'A4' ? 'bg-white shadow text-medical-700' : 'text-gray-500'}`}
+              >
+                کاغذ A4
+              </button>
+           </div>
+        </div>
+        <div className="flex gap-2">
+          <label className="px-4 py-2 border border-gray-300 rounded-xl hover:bg-gray-50 cursor-pointer flex items-center gap-2 text-sm font-medium">
+             <ImageIcon className="w-4 h-4"/>
+             آپلود عکس سربرگ (پس‌زمینه)
+             <input type="file" accept="image/*" className="hidden" onChange={handleBgUpload} />
+          </label>
+          <button onClick={handleReset} className="px-4 py-2 text-red-600 hover:bg-red-50 rounded-xl text-sm font-medium">
+            بازنشانی
+          </button>
+          <button onClick={handleSave} className="px-6 py-2 bg-medical-700 text-white hover:bg-medical-900 rounded-xl text-sm font-bold flex items-center gap-2">
+            <Save className="w-4 h-4"/>
+            ذخیره طرح
+          </button>
+        </div>
+      </div>
+
+      <div className="flex flex-1 overflow-hidden">
+        {/* Properties Panel */}
+        <div className="w-64 bg-white border-l border-gray-200 p-4 overflow-y-auto z-10 shadow-lg">
+           <h3 className="font-bold text-gray-700 mb-4 text-sm">المان‌های صفحه</h3>
+           <div className="space-y-2">
+             {Object.values(layout.elements).map(el => (
+               <div 
+                  key={el.id} 
+                  className={`p-3 rounded-lg border text-sm transition-colors cursor-pointer ${selectedElementId === el.id ? 'border-medical-500 bg-medical-50 ring-1 ring-medical-500' : 'border-gray-200 hover:bg-gray-50'}`}
+                  onClick={() => setSelectedElementId(el.id)}
+               >
+                 <div className="flex justify-between items-center mb-2">
+                   <span className="font-bold">{el.label}</span>
+                   <input 
+                     type="checkbox" 
+                     checked={el.visible}
+                     onChange={(e) => {
+                        setLayout(prev => ({
+                          ...prev,
+                          elements: { ...prev.elements, [el.id]: { ...el, visible: e.target.checked } }
+                        }));
+                     }}
+                   />
+                 </div>
+                 {el.visible && selectedElementId === el.id && (
+                   <div className="space-y-3">
+                     <div className="flex gap-2 items-center">
+                       <label className="text-xs text-gray-400 w-8">سایز</label>
+                       <input 
+                         type="number" 
+                         className="w-full border border-gray-300 rounded px-1 py-0.5 text-xs" 
+                         value={el.fontSize || 12}
+                         onChange={(e) => setLayout(prev => ({
+                            ...prev, 
+                            elements: { ...prev.elements, [el.id]: { ...el, fontSize: Number(e.target.value) } } 
+                         }))}
+                       />
+                       <span className="text-[10px] text-gray-400">pt</span>
+                     </div>
+                     <div className="flex gap-2 items-center">
+                       <label className="text-xs text-gray-400 w-8">عرض</label>
+                       <input 
+                         type="number" 
+                         className="w-full border border-gray-300 rounded px-1 py-0.5 text-xs" 
+                         value={el.width ? Math.round(el.width) : 0}
+                         onChange={(e) => setLayout(prev => ({
+                            ...prev, 
+                            elements: { ...prev.elements, [el.id]: { ...el, width: Number(e.target.value) } } 
+                         }))}
+                       />
+                       <span className="text-[10px] text-gray-400">mm</span>
+                     </div>
+                     <button 
+                       onClick={() => rotateElement(el.id)}
+                       className="w-full flex items-center justify-center gap-2 py-1.5 border border-gray-300 rounded hover:bg-gray-50 text-xs font-medium"
+                     >
+                       <RotateCw className="w-3 h-3" />
+                       چرخش ({el.rotation || 0}°)
+                     </button>
+                   </div>
+                 )}
+               </div>
+             ))}
+           </div>
+        </div>
+
+        {/* Canvas Area */}
+        <div className="flex-1 bg-gray-100 overflow-auto flex items-center justify-center p-8 relative" onMouseMove={handleMouseMove} onMouseUp={handleMouseUp} onMouseLeave={handleMouseUp}>
+           <div 
+             ref={containerRef}
+             className="bg-white shadow-2xl relative overflow-hidden select-none"
+             style={{
+               width: `${paperWidthMm}mm`,
+               height: `${paperHeightMm}mm`,
+               direction: 'ltr' // Coordinate system
+             }}
+           >
+             {/* Background Image */}
+             {layout.backgroundImage ? (
+               <img src={layout.backgroundImage} className="absolute inset-0 w-full h-full object-cover opacity-40 pointer-events-none" alt="" />
+             ) : (
+               <div className="absolute inset-0 flex items-center justify-center text-gray-200 text-6xl font-bold opacity-20 pointer-events-none -rotate-45">
+                 {layout.paperSize} PAPER
+               </div>
+             )}
+
+             {/* Rulers/Guidelines (Visual Aid) */}
+             <div className="absolute left-0 top-0 right-0 h-[10mm] border-b border-blue-100 opacity-50 pointer-events-none"></div>
+             <div className="absolute left-[10mm] top-0 bottom-0 w-[1px] bg-blue-100 opacity-50 pointer-events-none"></div>
+
+             {/* Draggable Elements */}
+             {Object.values(layout.elements).map(el => el.visible && (
+               <div
+                 key={el.id}
+                 onMouseDown={(e) => handleMouseDown(e, el.id)}
+                 className={`absolute cursor-move group hover:z-50 ${selectedElementId === el.id ? 'z-50' : 'z-10'}`}
+                 style={{
+                   left: `${el.x}mm`,
+                   top: `${el.y}mm`,
+                   width: el.width ? `${el.width}mm` : 'auto',
+                   fontSize: `${el.fontSize}pt`,
+                   transform: `rotate(${el.rotation || 0}deg)`,
+                   transformOrigin: 'center center'
+                 }}
+               >
+                 <div className={`border border-dashed p-1 whitespace-nowrap overflow-hidden transition-colors ${selectedElementId === el.id ? 'border-medical-600 bg-medical-50/80 text-medical-800' : 'border-gray-300 hover:border-medical-400 bg-white/50'}`}>
+                    {el.label} {el.id === 'rxItems' && '(لیست داروها)'}
+                 </div>
+                 {/* Position Tooltip */}
+                 <div className="absolute -top-4 left-0 text-[8px] bg-black text-white px-1 rounded opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap">
+                    x:{Math.round(el.x)} y:{Math.round(el.y)} {el.rotation ? `r:${el.rotation}°` : ''}
+                 </div>
+               </div>
+             ))}
+
+           </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+
+// 4. Settings View Container
+const SettingsView = () => {
+  const [activeSubTab, setActiveSubTab] = useState<'profile' | 'designer' | 'backup'>('profile');
+
+  return (
+    <div className="max-w-7xl mx-auto p-4 md:p-8 h-screen md:h-auto flex flex-col">
       <h1 className="text-2xl font-bold text-gray-800 mb-6">تنظیمات و مدیریت</h1>
       
       <div className="flex gap-2 mb-6 overflow-x-auto pb-2 no-scrollbar">
@@ -1359,6 +1644,13 @@ const SettingsView = () => {
         >
           <UserCog className="w-4 h-4"/>
           اطلاعات مطب
+        </button>
+        <button 
+          onClick={() => setActiveSubTab('designer')}
+          className={`px-4 py-2 rounded-xl whitespace-nowrap transition-colors flex items-center gap-2 ${activeSubTab === 'designer' ? 'bg-gray-800 text-white' : 'bg-white text-gray-600 hover:bg-gray-100'}`}
+        >
+          <LayoutTemplate className="w-4 h-4"/>
+          طراحی نسخه (سربرگ)
         </button>
         <button 
           onClick={() => setActiveSubTab('backup')}
@@ -1371,6 +1663,7 @@ const SettingsView = () => {
 
       <div className="flex-1 md:min-h-[500px]">
         {activeSubTab === 'profile' && <DoctorProfileSettings />}
+        {activeSubTab === 'designer' && <PrintLayoutDesigner />}
         {activeSubTab === 'backup' && <BackupManager />}
       </div>
     </div>
@@ -1706,6 +1999,15 @@ const Workbench = ({
                     />
                   </div>
                   <div className="flex justify-between items-center">
+                    <label className="text-sm text-gray-500">تنفس (RR)</label>
+                    <input 
+                      className="w-20 p-1 border-b border-gray-200 text-center focus:border-medical-500 outline-none" 
+                      placeholder="18"
+                      value={vitalSigns.rr || ''}
+                      onChange={e => setVitalSigns({...vitalSigns, rr: e.target.value})}
+                    />
+                  </div>
+                  <div className="flex justify-between items-center">
                     <label className="text-sm text-gray-500">دما (Temp)</label>
                     <input 
                       className="w-20 p-1 border-b border-gray-200 text-center focus:border-medical-500 outline-none" 
@@ -1786,12 +2088,6 @@ export default function App() {
   const [historyPatient, setHistoryPatient] = useState<Patient | null>(null);
   const [printData, setPrintData] = useState<{ doctor: DoctorProfile, patient: Patient, prescription: Prescription } | null>(null);
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
-  
-  // Phase 5: Print Settings State
-  const [printSettings, setPrintSettings] = useState<PrintSettings>({
-    paperSize: 'a5',
-    showHeader: true
-  });
 
   // Preload drugs for datalist suggestions
   useEffect(() => {
@@ -1846,7 +2142,7 @@ export default function App() {
     setTimeout(() => {
       window.print();
       // Optional cleanup
-      // setActivePatient(null); 
+      setActivePatient(null); 
     }, 500);
   };
 
@@ -1858,7 +2154,7 @@ export default function App() {
         {activeTab === 'dashboard' && (
           <Workbench 
             activePatient={activePatient} 
-            onSelectPatient={handleSelectPatient}
+            onSelectPatient={handleSelectPatient} 
             onCloseVisit={() => setActivePatient(null)}
             onPrint={initiatePrintProcess}
             onAddPatient={openAddModal}
@@ -1892,7 +2188,7 @@ export default function App() {
       </main>
 
       {/* Hidden Print Container - Only visible during actual print */}
-      <PrintContainer data={printData} settings={printSettings} />
+      <PrintContainer data={printData} printSettings={{ showBackground: false }} />
 
       {/* Modals */}
       <PatientModal 
@@ -1913,8 +2209,6 @@ export default function App() {
         data={printData}
         onClose={() => setIsPreviewOpen(false)}
         onConfirmPrint={confirmPrint}
-        settings={printSettings}
-        onSettingsChange={setPrintSettings}
       />
 
       {/* Global Datalist for Drug Suggestions */}
