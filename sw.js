@@ -1,32 +1,28 @@
 
-const CACHE_NAME = 'tabyar-v3';
+const CACHE_NAME = 'tabyar-v4';
 const OFFLINE_URL = '/index.html';
 
-// فایل‌هایی که برای اجرای اولیه و آفلاین ضروری هستند
 const ASSETS_TO_CACHE = [
   '/',
   '/index.html',
   '/manifest.json',
   '/icon-192.png',
   '/icon-512.png',
-  // کش کردن منابع خارجی (CDN) برای اطمینان از لود شدن استایل‌ها در حالت آفلاین
   'https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/Vazirmatn-font-face.css',
   'https://cdn.tailwindcss.com'
 ];
 
-// نصب سرویس ورکر و کش کردن فایل‌های اولیه
 self.addEventListener('install', (event) => {
   console.log('[ServiceWorker] Install');
-  self.skipWaiting(); // فعال‌سازی فوری
+  self.skipWaiting();
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
-      console.log('[ServiceWorker] Caching app shell');
+      console.log('[ServiceWorker] Caching all: app shell and content');
       return cache.addAll(ASSETS_TO_CACHE);
     })
   );
 });
 
-// فعال‌سازی و پاک کردن کش‌های قدیمی
 self.addEventListener('activate', (event) => {
   console.log('[ServiceWorker] Activate');
   event.waitUntil(
@@ -43,72 +39,59 @@ self.addEventListener('activate', (event) => {
   );
 });
 
-// مدیریت درخواست‌ها
 self.addEventListener('fetch', (event) => {
   const request = event.request;
-  
-  // نادیده گرفتن درخواست‌های غیر GET
+
+  // Only handle GET requests
   if (request.method !== 'GET') return;
 
-  const url = new URL(request.url);
-
-  // استراتژی ۱: درخواست‌های ناوبری (HTML Pages) -> اول شبکه، بعد کش (پشتیبانی از SPA)
+  // 1. Navigation Requests (HTML) -> Network First, then Cache, then Offline Fallback
   if (request.mode === 'navigate') {
     event.respondWith(
       fetch(request)
-        .then((response) => {
+        .then((networkResponse) => {
           return caches.open(CACHE_NAME).then((cache) => {
-            // ذخیره نسخه تازه در کش
-            cache.put(request, response.clone());
-            return response;
+            cache.put(request, networkResponse.clone());
+            return networkResponse;
           });
         })
         .catch(() => {
-          // اگر آفلاین بودیم، index.html را از کش برگردان
-          return caches.match(OFFLINE_URL);
+          return caches.open(CACHE_NAME).then((cache) => {
+            return cache.match(OFFLINE_URL).then((cachedResponse) => {
+              if (cachedResponse) return cachedResponse;
+              // Fallback to match /index.html if OFFLINE_URL specific match fails
+              return cache.match('/index.html');
+            });
+          });
         })
     );
     return;
   }
 
-  // استراتژی ۲: فایل‌های ثابت (JS, CSS, Images, Fonts) -> اول کش، بعد شبکه
-  if (
-    request.destination === 'script' ||
-    request.destination === 'style' ||
-    request.destination === 'image' ||
-    request.destination === 'font' ||
-    url.origin !== self.location.origin // شامل CDN ها
-  ) {
-    event.respondWith(
-      caches.match(request).then((cachedResponse) => {
-        if (cachedResponse) {
-          return cachedResponse;
-        }
-        return fetch(request).then((networkResponse) => {
-          // کش کردن فایل‌های جدیدی که در حین کار لود می‌شوند
-          if (
-            !networkResponse || 
-            networkResponse.status !== 200 || 
-            networkResponse.type !== 'basic' && networkResponse.type !== 'cors'
-          ) {
-            return networkResponse;
-          }
-
-          const responseToCache = networkResponse.clone();
-          caches.open(CACHE_NAME).then((cache) => {
-            cache.put(request, responseToCache);
-          });
-          return networkResponse;
-        });
-      })
-    );
-    return;
-  }
-
-  // استراتژی پیش‌فرض
+  // 2. Static Assets (Scripts, Styles, Images, Fonts) -> Cache First, then Network
   event.respondWith(
-    caches.match(request).then((response) => {
-      return response || fetch(request);
+    caches.match(request).then((cachedResponse) => {
+      if (cachedResponse) {
+        return cachedResponse;
+      }
+
+      return fetch(request).then((networkResponse) => {
+        // Check if we received a valid response
+        if (!networkResponse || networkResponse.status !== 200 || networkResponse.type !== 'basic' && networkResponse.type !== 'cors') {
+          return networkResponse;
+        }
+
+        // Cache the new resource
+        const responseToCache = networkResponse.clone();
+        caches.open(CACHE_NAME).then((cache) => {
+          cache.put(request, responseToCache);
+        });
+
+        return networkResponse;
+      }).catch(err => {
+        console.log('Fetch failed for asset:', request.url);
+        // Optional: Return a placeholder image if it's an image request
+      });
     })
   );
 });
