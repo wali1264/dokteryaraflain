@@ -33,10 +33,13 @@ import {
   UserPlus,
   Move,
   LayoutTemplate,
-  RotateCw
+  RotateCw,
+  Library,
+  BookOpen
 } from 'lucide-react';
 import { dbParams, backupSystem } from './db';
 import { Patient, Drug, PrescriptionTemplate, DoctorProfile, PrescriptionItem, VitalSigns, Prescription, PrintLayout, PrintElement } from './types';
+import { DRUG_CATEGORIES, REFERENCE_DRUGS } from './drugReference';
 
 // --- CONSTANTS ---
 const MM_TO_PX = 3.7795275591; // 1mm in pixels (approx for screen)
@@ -424,13 +427,13 @@ const Navigation = ({ activeTab, onTabChange }: { activeTab: string, onTabChange
                   : 'text-gray-500 hover:bg-gray-50 hover:text-gray-700'
               }`}
             >
-              <item.icon className="w-5 h-5 ml-3" />
+              <item.icon className={`w-5 h-5 ml-3 ${activeTab === item.id ? 'fill-current opacity-20' : ''}`} />
               <span>{item.label}</span>
             </button>
           ))}
         </div>
         <div className="p-4 border-t border-gray-100 text-center text-xs text-gray-400">
-          نسخه ۱.۸.۲ (Fixes)
+          نسخه ۱.۹.۰ (Bank)
         </div>
       </div>
 
@@ -976,11 +979,18 @@ const DoctorProfileSettings = () => {
   );
 };
 
-// 2.2 Drugs Manager (Unchanged)
+// 2.2 Drugs Manager (Enhanced with Reference Library)
 const DrugsManager = () => {
+  const [activeSubTab, setActiveSubTab] = useState<'mylist' | 'library'>('mylist');
+  
+  // My List State
   const [drugs, setDrugs] = useState<Drug[]>([]);
   const [search, setSearch] = useState('');
   const [editingDrug, setEditingDrug] = useState<Partial<Drug> | null>(null);
+
+  // Reference Library State
+  const [selectedCategory, setSelectedCategory] = useState('antibiotic');
+  const [libSearch, setLibSearch] = useState('');
 
   useEffect(() => {
     loadDrugs();
@@ -988,6 +998,8 @@ const DrugsManager = () => {
 
   const loadDrugs = async () => {
     const data = await dbParams.getAllDrugs();
+    // Sort alphabetically
+    data.sort((a, b) => a.name.localeCompare(b.name));
     setDrugs(data);
   };
 
@@ -1012,64 +1024,174 @@ const DrugsManager = () => {
     }
   };
 
+  const addFromLibrary = async (refDrug: any) => {
+    // Check if already exists (simple name check)
+    const exists = drugs.some(d => d.name.toLowerCase() === refDrug.name.toLowerCase());
+    if (exists) {
+      alert('این دارو قبلاً در لیست شما موجود است.');
+      return;
+    }
+
+    const newDrug: Drug = {
+      id: crypto.randomUUID(),
+      name: refDrug.name,
+      defaultInstruction: refDrug.instruction
+    };
+    await dbParams.addDrug(newDrug);
+    loadDrugs();
+    alert('دارو به لیست شخصی شما اضافه شد.');
+  };
+
   const filtered = drugs.filter(d => d.name.toLowerCase().includes(search.toLowerCase()));
+
+  // Filter Library
+  const filteredLibrary = REFERENCE_DRUGS.filter(d => {
+    const matchesCategory = selectedCategory === 'all' || d.category === selectedCategory;
+    const matchesSearch = d.name.toLowerCase().includes(libSearch.toLowerCase());
+    return matchesCategory && matchesSearch;
+  });
 
   return (
     <div className="p-4 md:p-8 pb-24 md:pb-8 max-w-5xl mx-auto">
-      <div className="flex justify-between items-center mb-8">
+      <div className="flex justify-between items-center mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-gray-800">بانک دارویی</h1>
-          <p className="text-gray-500 text-sm mt-1">مدیریت لیست داروهای پرکاربرد</p>
+          <h1 className="text-2xl font-bold text-gray-800">مدیریت داروها</h1>
+          <p className="text-gray-500 text-sm mt-1">بانک اطلاعات دارویی و لیست شخصی</p>
         </div>
+      </div>
+
+      {/* Sub Tabs */}
+      <div className="flex gap-2 mb-6 bg-gray-100 p-1 rounded-xl w-fit">
         <button 
-          onClick={() => setEditingDrug({ name: '', defaultInstruction: '' })}
-          className="bg-medical-700 text-white hover:bg-medical-900 px-6 py-3 rounded-xl font-bold flex items-center gap-2 transition-colors shadow-lg shadow-medical-500/30"
+          onClick={() => setActiveSubTab('mylist')}
+          className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-all ${activeSubTab === 'mylist' ? 'bg-white text-medical-700 shadow-sm' : 'text-gray-500 hover:bg-gray-200'}`}
         >
-          <PlusCircle className="w-5 h-5" />
-          افزودن دارو
+          <Pill className="w-4 h-4" />
+          داروهای من (لیست دم‌دست)
+        </button>
+        <button 
+          onClick={() => setActiveSubTab('library')}
+          className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-all ${activeSubTab === 'library' ? 'bg-white text-medical-700 shadow-sm' : 'text-gray-500 hover:bg-gray-200'}`}
+        >
+          <Library className="w-4 h-4" />
+          کتابخانه مرجع (۳۰۰+ قلم)
         </button>
       </div>
 
-      <div className="mb-6 relative max-w-lg">
-         <Search className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5" />
-         <input 
-           className="w-full pl-4 pr-10 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-medical-500 outline-none shadow-sm"
-           placeholder="جستجوی نام دارو..."
-           value={search}
-           onChange={e => setSearch(e.target.value)}
-         />
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {filtered.map(drug => (
-          <div key={drug.id} className="flex justify-between items-start p-4 bg-white rounded-2xl border border-gray-100 hover:shadow-md transition-all">
-             <div>
-               <div className="font-bold text-gray-800">{drug.name}</div>
-               {drug.defaultInstruction ? (
-                  <div className="text-sm text-gray-500 mt-1">{drug.defaultInstruction}</div>
-               ) : (
-                  <div className="text-xs text-gray-300 mt-1 italic">بدون دستور</div>
-               )}
+      {activeSubTab === 'mylist' ? (
+        <>
+          <div className="flex gap-2 mb-6">
+             <div className="relative flex-1">
+                <Search className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5" />
+                <input 
+                  className="w-full pl-4 pr-10 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-medical-500 outline-none shadow-sm"
+                  placeholder="جستجو در داروهای من..."
+                  value={search}
+                  onChange={e => setSearch(e.target.value)}
+                />
              </div>
-             <div className="flex gap-1">
-               <button onClick={() => setEditingDrug(drug)} className="p-2 text-blue-500 hover:bg-blue-50 rounded-lg">
-                 <Edit2 className="w-4 h-4" />
-               </button>
-               <button onClick={() => handleDelete(drug.id)} className="p-2 text-red-500 hover:bg-red-50 rounded-lg">
-                 <Trash2 className="w-4 h-4" />
-               </button>
-             </div>
+             <button 
+                onClick={() => setEditingDrug({ name: '', defaultInstruction: '' })}
+                className="bg-medical-700 text-white hover:bg-medical-900 px-4 py-3 rounded-xl font-bold flex items-center gap-2 transition-colors shadow-lg shadow-medical-500/30 whitespace-nowrap"
+              >
+                <PlusCircle className="w-5 h-5" />
+                <span className="hidden md:inline">افزودن دستی</span>
+              </button>
           </div>
-        ))}
-        {filtered.length === 0 && (
-           <div className="col-span-full text-center py-20 bg-white rounded-2xl border border-dashed border-gray-300">
-             <Pill className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-             <p className="text-gray-500">دارویی یافت نشد.</p>
-           </div>
-        )}
-      </div>
 
-      {/* Mini Modal for Drug Add/Edit */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {filtered.map(drug => (
+              <div key={drug.id} className="flex justify-between items-start p-4 bg-white rounded-2xl border border-gray-100 hover:shadow-md transition-all">
+                <div className="flex-1 min-w-0">
+                  <div className="font-bold text-gray-800 truncate" title={drug.name}>{drug.name}</div>
+                  {drug.defaultInstruction ? (
+                      <div className="text-sm text-gray-500 mt-1 truncate">{drug.defaultInstruction}</div>
+                  ) : (
+                      <div className="text-xs text-gray-300 mt-1 italic">بدون دستور</div>
+                  )}
+                </div>
+                <div className="flex gap-1 mr-2">
+                  <button onClick={() => setEditingDrug(drug)} className="p-2 text-blue-500 hover:bg-blue-50 rounded-lg">
+                    <Edit2 className="w-4 h-4" />
+                  </button>
+                  <button onClick={() => handleDelete(drug.id)} className="p-2 text-red-500 hover:bg-red-50 rounded-lg">
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            ))}
+            {filtered.length === 0 && (
+              <div className="col-span-full text-center py-20 bg-white rounded-2xl border border-dashed border-gray-300">
+                <Pill className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                <p className="text-gray-500">دارویی یافت نشد. می‌توانید از "کتابخانه مرجع" اضافه کنید.</p>
+              </div>
+            )}
+          </div>
+        </>
+      ) : (
+        <>
+          {/* Reference Library UI */}
+          <div className="mb-6 space-y-4">
+            {/* Categories */}
+            <div className="flex gap-2 overflow-x-auto pb-2 no-scrollbar">
+               <button 
+                  onClick={() => setSelectedCategory('all')}
+                  className={`px-3 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-colors border ${selectedCategory === 'all' ? 'bg-gray-800 text-white border-gray-800' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}
+               >
+                 همه
+               </button>
+               {DRUG_CATEGORIES.map(cat => (
+                 <button 
+                   key={cat.id}
+                   onClick={() => setSelectedCategory(cat.id)}
+                   className={`px-3 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-colors border ${selectedCategory === cat.id ? 'bg-medical-700 text-white border-medical-700' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}
+                 >
+                   {cat.label}
+                 </button>
+               ))}
+            </div>
+
+            {/* Search Library */}
+            <div className="relative">
+               <Search className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5" />
+               <input 
+                 className="w-full pl-4 pr-10 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-medical-500 outline-none shadow-sm"
+                 placeholder="جستجو در کل بانک دارویی..."
+                 value={libSearch}
+                 onChange={e => setLibSearch(e.target.value)}
+               />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+             {filteredLibrary.slice(0, 100).map((d, idx) => ( // Limit render for perf
+                <div key={idx} className="bg-gray-50 border border-gray-200 rounded-xl p-3 flex justify-between items-center hover:bg-white hover:shadow-sm transition-all">
+                   <div className="min-w-0 flex-1">
+                      <div className="font-bold text-gray-800 text-sm truncate">{d.name}</div>
+                      <div className="text-xs text-gray-500 truncate">{d.instruction}</div>
+                   </div>
+                   <button 
+                     onClick={() => addFromLibrary(d)}
+                     className="bg-white border border-gray-300 hover:border-medical-500 hover:text-medical-600 p-2 rounded-lg shadow-sm transition-colors"
+                     title="افزودن به لیست من"
+                   >
+                      <Plus className="w-4 h-4" />
+                   </button>
+                </div>
+             ))}
+             {filteredLibrary.length === 0 && (
+                <div className="col-span-full text-center py-10 text-gray-400 text-sm">
+                   موردی یافت نشد.
+                </div>
+             )}
+          </div>
+          <div className="mt-4 text-center text-xs text-gray-400">
+             نمایش محدود نتایج جهت افزایش سرعت (از جستجو استفاده کنید)
+          </div>
+        </>
+      )}
+
+      {/* Mini Modal for Drug Add/Edit (For Manual Add) */}
       {editingDrug && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <form onSubmit={handleSave} className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-2xl">
