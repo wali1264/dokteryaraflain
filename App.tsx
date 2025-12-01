@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { 
   Users, 
@@ -97,7 +96,8 @@ const PrescriptionPaper = ({
             direction: 'rtl',
             textAlign: 'right',
             transform: `rotate(${el.rotation || 0}deg)`,
-            transformOrigin: 'center center'
+            transformOrigin: 'center center',
+            zIndex: 10 // Ensure text is above background
           }}
         >
           {content}
@@ -107,7 +107,7 @@ const PrescriptionPaper = ({
 
     return (
       <div 
-        className="relative overflow-hidden bg-white text-black"
+        className="relative overflow-hidden bg-white text-black print:bg-white"
         style={{
           width: `${paperWidth}mm`,
           height: `${paperHeight}mm`,
@@ -118,8 +118,13 @@ const PrescriptionPaper = ({
         {layout.backgroundImage && showBackground && (
           <img 
             src={layout.backgroundImage} 
-            className="absolute inset-0 w-full h-full object-cover z-0 opacity-50 print:opacity-100" 
-            alt="" 
+            className="absolute inset-0 w-full h-full object-cover z-0" 
+            style={{
+              opacity: 1, // Ensure full opacity for print
+              printColorAdjust: 'exact',
+              WebkitPrintColorAdjust: 'exact'
+            }}
+            alt="Letterhead Background" 
           />
         )}
 
@@ -148,7 +153,8 @@ const PrescriptionPaper = ({
               direction: 'rtl',
               textAlign: 'right',
               transform: `rotate(${els['rxItems'].rotation || 0}deg)`,
-              transformOrigin: 'center center'
+              transformOrigin: 'center center',
+              zIndex: 10
             }}
           >
             <ul className="space-y-2">
@@ -336,21 +342,33 @@ const PrintPreviewModal = ({
                       </div>
                       
                       {data.doctor.printLayout?.backgroundImage && (
-                        <label className="flex items-center gap-2 cursor-pointer p-2 hover:bg-gray-50 rounded-lg">
-                          <input 
-                            type="checkbox" 
-                            checked={showBackground} 
-                            onChange={e => setShowBackground(e.target.checked)}
-                            className="w-4 h-4 rounded text-medical-600 focus:ring-medical-500"
-                          />
-                          <span className="text-sm">چاپ تصویر پس‌زمینه (سربرگ)</span>
-                        </label>
+                        <div className="space-y-2">
+                          <label className="flex items-center gap-2 cursor-pointer p-2 hover:bg-gray-50 rounded-lg border border-gray-100">
+                            <input 
+                              type="checkbox" 
+                              checked={showBackground} 
+                              onChange={e => setShowBackground(e.target.checked)}
+                              className="w-4 h-4 rounded text-medical-600 focus:ring-medical-500"
+                            />
+                            <span className="text-sm">چاپ تصویر پس‌زمینه (سربرگ)</span>
+                          </label>
+                          
+                          {showBackground && (
+                            <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg text-xs text-yellow-800 leading-relaxed">
+                              <strong>نکته مهم:</strong>
+                              <br/>
+                              اگر در چاپ نهایی تصویر دیده نشد، لطفا در پنجره چاپ مرورگر گزینه 
+                              <span className="font-bold mx-1" dir="ltr">Background graphics</span>
+                              را تیک بزنید.
+                            </div>
+                          )}
+                        </div>
                       )}
                       
                       <p className="text-xs text-gray-400 mt-2">
-                         * اگر از کاغذ سفید استفاده می‌کنید، تیک بالا را بزنید تا سربرگ هم چاپ شود.
+                         * اگر از کاغذ سفید استفاده می‌کنید، تیک "چاپ تصویر" را بزنید.
                          <br/>
-                         * اگر کاغذ سربرگ‌دار در پرینتر دارید، تیک را بردارید.
+                         * اگر کاغذ سربرگ‌دار دارید، تیک را بردارید.
                       </p>
                    </div>
                  ) : (

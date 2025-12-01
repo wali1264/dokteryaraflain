@@ -61,13 +61,16 @@
       /* Print Specific Styles */
       @media print {
         @page {
-          size: A5;
+          size: auto;
           margin: 0;
         }
         body {
           background-color: white;
           margin: 0;
           padding: 0;
+          -webkit-print-color-adjust: exact !important;
+          print-color-adjust: exact !important;
+          color-adjust: exact !important;
         }
         /* Hide everything by default */
         body * {
@@ -85,7 +88,7 @@
           height: 100%;
           background: white;
           z-index: 9999;
-          padding: 15mm; /* Standard print margin */
+          padding: 0; /* Remove default padding to allow full bleed if needed */
         }
         /* Hide navigation and other UI elements explicitly */
         nav, header, footer, button, .no-print {
