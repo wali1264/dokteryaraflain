@@ -1,33 +1,41 @@
 
-const CACHE_NAME = 'tabyar-v1';
+const CACHE_NAME = 'tabyar-v3';
+const OFFLINE_URL = '/index.html';
 
-// لیستی از فایل‌هایی که باید فوراً کش شوند (هسته اصلی)
-// با توجه به اینکه نام فایل‌های بیلد شده ممکن است تغییر کند، 
-// استراتژی اصلی ما کش کردن دینامیک تمام درخواست‌ها است.
-const PRE_CACHE_URLS = [
+// فایل‌هایی که برای اجرای اولیه و آفلاین ضروری هستند
+const ASSETS_TO_CACHE = [
   '/',
   '/index.html',
-  '/manifest.json'
+  '/manifest.json',
+  '/icon-192.png',
+  '/icon-512.png',
+  // کش کردن منابع خارجی (CDN) برای اطمینان از لود شدن استایل‌ها در حالت آفلاین
+  'https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/Vazirmatn-font-face.css',
+  'https://cdn.tailwindcss.com'
 ];
 
-// نصب سرویس ورکر
+// نصب سرویس ورکر و کش کردن فایل‌های اولیه
 self.addEventListener('install', (event) => {
-  self.skipWaiting(); // فوراً فعال شو
+  console.log('[ServiceWorker] Install');
+  self.skipWaiting(); // فعال‌سازی فوری
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(PRE_CACHE_URLS);
+      console.log('[ServiceWorker] Caching app shell');
+      return cache.addAll(ASSETS_TO_CACHE);
     })
   );
 });
 
-// پاکسازی کش‌های قدیمی هنگام فعال‌سازی نسخه جدید
+// فعال‌سازی و پاک کردن کش‌های قدیمی
 self.addEventListener('activate', (event) => {
+  console.log('[ServiceWorker] Activate');
   event.waitUntil(
-    caches.keys().then((cacheNames) => {
+    caches.keys().then((keyList) => {
       return Promise.all(
-        cacheNames.map((cacheName) => {
-          if (cacheName !== CACHE_NAME) {
-            return caches.delete(cacheName);
+        keyList.map((key) => {
+          if (key !== CACHE_NAME) {
+            console.log('[ServiceWorker] Removing old cache', key);
+            return caches.delete(key);
           }
         })
       );
@@ -35,34 +43,72 @@ self.addEventListener('activate', (event) => {
   );
 });
 
-// مدیریت درخواست‌های شبکه (استراتژی: اول کش، اگر نبود شبکه و سپس ذخیره در کش)
+// مدیریت درخواست‌ها
 self.addEventListener('fetch', (event) => {
-  // از کش کردن درخواست‌های غیر GET خودداری کن
-  if (event.request.method !== 'GET') return;
+  const request = event.request;
+  
+  // نادیده گرفتن درخواست‌های غیر GET
+  if (request.method !== 'GET') return;
 
-  event.respondWith(
-    caches.match(event.request).then((cachedResponse) => {
-      if (cachedResponse) {
-        return cachedResponse;
-      }
+  const url = new URL(request.url);
 
-      return fetch(event.request).then((networkResponse) => {
-        // اگر پاسخ معتبر نبود، برگردان
-        if (!networkResponse || networkResponse.status !== 200 || networkResponse.type !== 'basic' && networkResponse.type !== 'cors') {
-          return networkResponse;
+  // استراتژی ۱: درخواست‌های ناوبری (HTML Pages) -> اول شبکه، بعد کش (پشتیبانی از SPA)
+  if (request.mode === 'navigate') {
+    event.respondWith(
+      fetch(request)
+        .then((response) => {
+          return caches.open(CACHE_NAME).then((cache) => {
+            // ذخیره نسخه تازه در کش
+            cache.put(request, response.clone());
+            return response;
+          });
+        })
+        .catch(() => {
+          // اگر آفلاین بودیم، index.html را از کش برگردان
+          return caches.match(OFFLINE_URL);
+        })
+    );
+    return;
+  }
+
+  // استراتژی ۲: فایل‌های ثابت (JS, CSS, Images, Fonts) -> اول کش، بعد شبکه
+  if (
+    request.destination === 'script' ||
+    request.destination === 'style' ||
+    request.destination === 'image' ||
+    request.destination === 'font' ||
+    url.origin !== self.location.origin // شامل CDN ها
+  ) {
+    event.respondWith(
+      caches.match(request).then((cachedResponse) => {
+        if (cachedResponse) {
+          return cachedResponse;
         }
+        return fetch(request).then((networkResponse) => {
+          // کش کردن فایل‌های جدیدی که در حین کار لود می‌شوند
+          if (
+            !networkResponse || 
+            networkResponse.status !== 200 || 
+            networkResponse.type !== 'basic' && networkResponse.type !== 'cors'
+          ) {
+            return networkResponse;
+          }
 
-        // کپی کردن پاسخ شبکه در کش برای استفاده‌های بعدی
-        const responseToCache = networkResponse.clone();
-        caches.open(CACHE_NAME).then((cache) => {
-          cache.put(event.request, responseToCache);
+          const responseToCache = networkResponse.clone();
+          caches.open(CACHE_NAME).then((cache) => {
+            cache.put(request, responseToCache);
+          });
+          return networkResponse;
         });
+      })
+    );
+    return;
+  }
 
-        return networkResponse;
-      }).catch(() => {
-        // اینجا می‌توان یک صفحه آفلاین پیش‌فرض برگرداند اگر نیاز بود
-        // اما چون SPA است، معمولا index.html کش شده کافیست
-      });
+  // استراتژی پیش‌فرض
+  event.respondWith(
+    caches.match(request).then((response) => {
+      return response || fetch(request);
     })
   );
 });

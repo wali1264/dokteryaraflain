@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
+
+import React, { useState, useEffect, useRef, createContext, useContext } from 'react';
 import { 
   Users, 
   Stethoscope, 
@@ -34,7 +35,9 @@ import {
   LayoutTemplate,
   RotateCw,
   Library,
-  BookOpen
+  BookOpen,
+  XCircle,
+  Info
 } from 'lucide-react';
 import { dbParams, backupSystem } from './db';
 import { Patient, Drug, PrescriptionTemplate, DoctorProfile, PrescriptionItem, VitalSigns, Prescription, PrintLayout, PrintElement } from './types';
@@ -55,6 +58,75 @@ const DEFAULT_PRINT_ELEMENTS: { [key: string]: PrintElement } = {
   diagnosis: { id: 'diagnosis', label: 'تشخیص', x: 10, y: 50, visible: true, width: 80, fontSize: 12, rotation: 0 },
   rxItems: { id: 'rxItems', label: 'اقلام دارویی', x: 10, y: 90, visible: true, width: 130, fontSize: 12, rotation: 0 },
 };
+
+// --- TOAST NOTIFICATION SYSTEM ---
+type ToastType = 'success' | 'error' | 'info';
+interface ToastMessage {
+  id: string;
+  message: string;
+  type: ToastType;
+}
+
+interface ToastContextType {
+  showToast: (message: string, type?: ToastType) => void;
+}
+
+const ToastContext = createContext<ToastContextType | undefined>(undefined);
+
+const useToast = () => {
+  const context = useContext(ToastContext);
+  if (!context) {
+    throw new Error('useToast must be used within a ToastProvider');
+  }
+  return context;
+};
+
+const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const [toasts, setToasts] = useState<ToastMessage[]>([]);
+
+  const showToast = (message: string, type: ToastType = 'info') => {
+    const id = Math.random().toString(36).substring(2, 9);
+    setToasts((prev) => [...prev, { id, message, type }]);
+
+    // Auto dismiss
+    setTimeout(() => {
+      removeToast(id);
+    }, 3000);
+  };
+
+  const removeToast = (id: string) => {
+    setToasts((prev) => prev.filter((t) => t.id !== id));
+  };
+
+  return (
+    <ToastContext.Provider value={{ showToast }}>
+      {children}
+      {/* Toast Container */}
+      <div className="fixed bottom-4 left-0 right-0 z-[100] flex flex-col items-center gap-2 pointer-events-none px-4">
+        {toasts.map((toast) => (
+          <div
+            key={toast.id}
+            className={`
+              pointer-events-auto flex items-center gap-3 px-4 py-3 rounded-xl shadow-lg border animate-in slide-in-from-bottom-5 fade-in duration-300 min-w-[300px] max-w-md
+              ${toast.type === 'success' ? 'bg-medical-900 text-white border-medical-700' : ''}
+              ${toast.type === 'error' ? 'bg-red-50 text-red-900 border-red-200' : ''}
+              ${toast.type === 'info' ? 'bg-gray-800 text-white border-gray-700' : ''}
+            `}
+          >
+            {toast.type === 'success' && <CheckCircle className="w-5 h-5 text-medical-400" />}
+            {toast.type === 'error' && <XCircle className="w-5 h-5 text-red-500" />}
+            {toast.type === 'info' && <Info className="w-5 h-5 text-blue-400" />}
+            <span className="text-sm font-medium flex-1">{toast.message}</span>
+            <button onClick={() => removeToast(toast.id)} className="opacity-60 hover:opacity-100">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        ))}
+      </div>
+    </ToastContext.Provider>
+  );
+};
+
 
 // --- SHARED COMPONENTS ---
 
@@ -451,7 +523,7 @@ const Navigation = ({ activeTab, onTabChange }: { activeTab: string, onTabChange
           ))}
         </div>
         <div className="p-4 border-t border-gray-100 text-center text-xs text-gray-400">
-          نسخه ۱.۹.۰ (Bank)
+          نسخه ۱.۹.۵ (Smart Toast)
         </div>
       </div>
 
@@ -847,6 +919,7 @@ const PatientsView = ({
 
 // 2.1 Doctor Profile Settings
 const DoctorProfileSettings = () => {
+  const { showToast } = useToast();
   const [profile, setProfile] = useState<DoctorProfile>({
     id: 'profile',
     fullName: '',
@@ -869,6 +942,7 @@ const DoctorProfileSettings = () => {
     e.preventDefault();
     await dbParams.saveDoctorProfile(profile);
     setIsSaved(true);
+    showToast('اطلاعات پزشک با موفقیت ذخیره شد', 'success');
     setTimeout(() => setIsSaved(false), 2000);
   };
 
@@ -876,12 +950,13 @@ const DoctorProfileSettings = () => {
     const file = e.target.files?.[0];
     if (file) {
       if (file.size > 500000) { // Limit to ~500KB
-        alert('حجم لوگو باید کمتر از ۵۰۰ کیلوبایت باشد.');
+        showToast('حجم لوگو باید کمتر از ۵۰۰ کیلوبایت باشد.', 'error');
         return;
       }
       const reader = new FileReader();
       reader.onloadend = () => {
         setProfile({ ...profile, logo: reader.result as string });
+        showToast('لوگو بارگذاری شد. لطفا ذخیره کنید.', 'success');
       };
       reader.readAsDataURL(file);
     }
@@ -999,6 +1074,7 @@ const DoctorProfileSettings = () => {
 
 // 2.2 Drugs Manager (Enhanced with Reference Library)
 const DrugsManager = () => {
+  const { showToast } = useToast();
   const [activeSubTab, setActiveSubTab] = useState<'mylist' | 'library'>('mylist');
   
   // My List State
@@ -1033,12 +1109,14 @@ const DrugsManager = () => {
     await dbParams.addDrug(drug);
     setEditingDrug(null);
     loadDrugs();
+    showToast('دارو با موفقیت ذخیره شد', 'success');
   };
 
   const handleDelete = async (id: string) => {
     if (confirm('آیا از حذف این دارو اطمینان دارید؟')) {
       await dbParams.deleteDrug(id);
       loadDrugs();
+      showToast('دارو حذف شد', 'info');
     }
   };
 
@@ -1046,7 +1124,7 @@ const DrugsManager = () => {
     // Check if already exists (simple name check)
     const exists = drugs.some(d => d.name.toLowerCase() === refDrug.name.toLowerCase());
     if (exists) {
-      alert('این دارو قبلاً در لیست شما موجود است.');
+      showToast('این دارو قبلاً در لیست شما موجود است', 'error');
       return;
     }
 
@@ -1057,7 +1135,7 @@ const DrugsManager = () => {
     };
     await dbParams.addDrug(newDrug);
     loadDrugs();
-    alert('دارو به لیست شخصی شما اضافه شد.');
+    showToast('دارو به لیست شخصی اضافه شد', 'success');
   };
 
   const filtered = drugs.filter(d => d.name.toLowerCase().includes(search.toLowerCase()));
@@ -1246,6 +1324,7 @@ const DrugsManager = () => {
 
 // 2.3 Templates Manager (Unchanged)
 const TemplatesManager = () => {
+  const { showToast } = useToast();
   const [templates, setTemplates] = useState<PrescriptionTemplate[]>([]);
   const [editingTemplate, setEditingTemplate] = useState<PrescriptionTemplate | null>(null);
 
@@ -1262,6 +1341,7 @@ const TemplatesManager = () => {
     if (confirm('حذف شود؟')) {
       await dbParams.deleteTemplate(id);
       loadTemplates();
+      showToast('نسخه آماده حذف شد', 'info');
     }
   };
 
@@ -1271,6 +1351,7 @@ const TemplatesManager = () => {
     await dbParams.addTemplate(editingTemplate);
     setEditingTemplate(null);
     loadTemplates();
+    showToast('نسخه آماده با موفقیت ذخیره شد', 'success');
   };
 
   const addRow = () => {
@@ -1431,8 +1512,11 @@ const TemplatesManager = () => {
 
 // 2.4 Backup Manager (Unchanged)
 const BackupManager = () => {
+  const { showToast } = useToast();
+
   const handleBackup = async () => {
     await backupSystem.exportData();
+    showToast('فایل پشتیبان دانلود شد', 'success');
   };
 
   const handleRestore = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1445,10 +1529,10 @@ const BackupManager = () => {
          const json = ev.target?.result as string;
          try {
            await backupSystem.importData(json);
-           alert('اطلاعات با موفقیت بازیابی شد. صفحه مجددا بارگذاری می‌شود.');
-           window.location.reload();
+           showToast('اطلاعات با موفقیت بازیابی شد. صفحه مجددا بارگذاری می‌شود.', 'success');
+           setTimeout(() => window.location.reload(), 2000);
          } catch (err) {
-           alert('خطا در بازیابی اطلاعات.');
+           showToast('خطا در بازیابی اطلاعات', 'error');
            console.error(err);
          }
        };
@@ -1507,6 +1591,7 @@ const BackupManager = () => {
 
 // 2.5 Visual Print Designer (Updated Logic)
 const PrintLayoutDesigner = () => {
+  const { showToast } = useToast();
   const [profile, setProfile] = useState<DoctorProfile | null>(null);
   const [layout, setLayout] = useState<PrintLayout>({
     paperSize: 'A5',
@@ -1539,12 +1624,13 @@ const PrintLayoutDesigner = () => {
     await dbParams.saveDoctorProfile({ ...currentProfile, printLayout: layout });
     if (!profile) setProfile(currentProfile); // Update local state if it was null
     
-    alert('طراحی نسخه با موفقیت ذخیره شد.');
+    showToast('طراحی نسخه با موفقیت ذخیره شد', 'success');
   };
 
   const handleReset = () => {
     if(confirm('آیا مطمئن هستید؟ تمام تغییرات شما به حالت پیش‌فرض برمی‌گردد.')) {
        setLayout({ paperSize: 'A5', elements: DEFAULT_PRINT_ELEMENTS });
+       showToast('طراحی به حالت پیش‌فرض بازگشت', 'info');
     }
   };
 
@@ -1554,6 +1640,7 @@ const PrintLayoutDesigner = () => {
       const reader = new FileReader();
       reader.onloadend = () => {
         setLayout(prev => ({ ...prev, backgroundImage: reader.result as string }));
+        showToast('تصویر پس‌زمینه بارگذاری شد', 'success');
       };
       reader.readAsDataURL(file);
     }
@@ -1585,9 +1672,7 @@ const PrintLayoutDesigner = () => {
       const dxPx = e.clientX - dragStartRef.current.x;
       const dyPx = e.clientY - dragStartRef.current.y;
       
-      const dxMm = -dxPx / MM_TO_PX; // Reversed because dragging in RTL usually feels weird, but here coordinate system is usually LTR based for absolute. Let's stick to LTR coord.
-      // Actually, since we are using LTR for container in PrescriptionPaper logic, let's use LTR math.
-      // BUT, page is RTL. Let's enforce LTR for the canvas container to make math easy.
+      const dxMm = -dxPx / MM_TO_PX; 
       
       const newX = initialPosRef.current.x + (dxPx / MM_TO_PX);
       const newY = initialPosRef.current.y + (dyPx / MM_TO_PX);
@@ -1659,7 +1744,7 @@ const PrintLayoutDesigner = () => {
         <div className="w-64 bg-white border-l border-gray-200 p-4 overflow-y-auto z-10 shadow-lg">
            <h3 className="font-bold text-gray-700 mb-4 text-sm">المان‌های صفحه</h3>
            <div className="space-y-2">
-             {Object.values(layout.elements).map(el => (
+             {(Object.values(layout.elements) as PrintElement[]).map(el => (
                <div 
                   key={el.id} 
                   className={`p-3 rounded-lg border text-sm transition-colors cursor-pointer ${selectedElementId === el.id ? 'border-medical-500 bg-medical-50 ring-1 ring-medical-500' : 'border-gray-200 hover:bg-gray-50'}`}
@@ -1745,7 +1830,7 @@ const PrintLayoutDesigner = () => {
              <div className="absolute left-[10mm] top-0 bottom-0 w-[1px] bg-blue-100 opacity-50 pointer-events-none"></div>
 
              {/* Draggable Elements */}
-             {Object.values(layout.elements).map(el => el.visible && (
+             {(Object.values(layout.elements) as PrintElement[]).map(el => el.visible && (
                <div
                  key={el.id}
                  onMouseDown={(e) => handleMouseDown(e, el.id)}
@@ -1834,6 +1919,7 @@ const Workbench = ({
   onPrint: (data: { patient: Patient, prescription: Prescription }) => void,
   onAddPatient: () => void
 }) => {
+  const { showToast } = useToast();
   const [search, setSearch] = useState('');
   const [results, setResults] = useState<Patient[]>([]);
   
@@ -1878,6 +1964,7 @@ const Workbench = ({
     const newItems = tmpl.items.map(i => ({...i, id: crypto.randomUUID()}));
     setItems(prev => [...prev, ...newItems]);
     setShowTemplates(false);
+    showToast('نسخه آماده اعمال شد', 'info');
   };
 
   const addItem = () => {
@@ -1934,7 +2021,7 @@ const Workbench = ({
     if (print) {
       onPrint({ patient: activePatient, prescription });
     } else {
-      alert('نسخه ذخیره شد.');
+      showToast('نسخه با موفقیت ذخیره شد', 'success');
       onCloseVisit();
     }
   };
@@ -2222,7 +2309,8 @@ const Workbench = ({
 
 
 // 5. Main App Container
-export default function App() {
+function MainApp() {
+  const { showToast } = useToast();
   const [activeTab, setActiveTab] = useState('dashboard');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingPatient, setEditingPatient] = useState<Patient | null>(null);
@@ -2256,6 +2344,7 @@ export default function App() {
     if (activeTab === 'dashboard' && !activePatient) {
         setActivePatient(patient);
     }
+    showToast('پرونده بیمار با موفقیت ذخیره شد', 'success');
   };
 
   const openAddModal = () => {
@@ -2366,5 +2455,13 @@ export default function App() {
         ))}
       </datalist>
     </div>
+  );
+}
+
+export default function App() {
+  return (
+    <ToastProvider>
+      <MainApp />
+    </ToastProvider>
   );
 }
