@@ -1,4 +1,3 @@
-
 import { Patient, Drug, PrescriptionTemplate, DoctorProfile, Prescription } from './types';
 
 const DB_NAME = 'TabYarDB';
@@ -137,6 +136,24 @@ export const dbParams = {
 
   saveDoctorProfile: async (profile: DoctorProfile): Promise<string> => {
     return performTransaction(STORE_SETTINGS, 'readwrite', (store) => store.put(profile)) as Promise<string>;
+  },
+
+  // Auth Security
+  checkAuth: async (password: string): Promise<boolean> => {
+    // Step 1: Get existing auth config
+    let auth = await performTransaction(STORE_SETTINGS, 'readonly', (store) => store.get('auth')) as { id: string, password: string } | undefined;
+    
+    // Step 2: If missing, set default '12345'
+    if (!auth) {
+      await performTransaction(STORE_SETTINGS, 'readwrite', (store) => store.put({ id: 'auth', password: '12345' }));
+      return password === '12345';
+    }
+    
+    return auth.password === password;
+  },
+
+  changePassword: async (newPass: string): Promise<void> => {
+    await performTransaction(STORE_SETTINGS, 'readwrite', (store) => store.put({ id: 'auth', password: newPass }));
   },
 
   // Prescriptions

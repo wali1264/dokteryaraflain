@@ -37,7 +37,11 @@ import {
   Library,
   BookOpen,
   XCircle,
-  Info
+  Info,
+  Lock,
+  ShieldCheck,
+  KeyRound,
+  LogOut
 } from 'lucide-react';
 import { dbParams, backupSystem } from './db';
 import { Patient, Drug, PrescriptionTemplate, DoctorProfile, PrescriptionItem, VitalSigns, Prescription, PrintLayout, PrintElement } from './types';
@@ -129,6 +133,78 @@ const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ children }) =>
 
 
 // --- SHARED COMPONENTS ---
+
+// 0. Login Screen
+const LoginScreen = ({ onLogin }: { onLogin: () => void }) => {
+  const { showToast } = useToast();
+  const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    try {
+      const isValid = await dbParams.checkAuth(password);
+      if (isValid) {
+        onLogin();
+      } else {
+        showToast('رمز عبور نادرست است', 'error');
+        setPassword('');
+      }
+    } catch (err) {
+      console.error(err);
+      showToast('خطا در برقراری ارتباط با پایگاه داده', 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-cream-50 flex flex-col items-center justify-center p-4">
+      <div className="bg-white p-8 rounded-3xl shadow-xl border border-gray-100 w-full max-w-md text-center">
+        <div className="bg-medical-50 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6">
+          <Stethoscope className="w-10 h-10 text-medical-700" />
+        </div>
+        <h1 className="text-2xl font-bold text-gray-800 mb-2">دکتریار</h1>
+        <p className="text-gray-500 mb-8 text-sm">لطفاً برای ورود رمز عبور خود را وارد کنید</p>
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="relative">
+             <Lock className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5" />
+             <input 
+               type="password"
+               autoFocus
+               inputMode="numeric"
+               required
+               placeholder="رمز عبور (پیش‌فرض: 12345)"
+               className="w-full pl-4 pr-12 py-4 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-medical-500 outline-none text-center text-lg tracking-widest"
+               value={password}
+               onChange={(e) => setPassword(e.target.value)}
+             />
+          </div>
+          <button 
+            type="submit" 
+            disabled={loading}
+            className="w-full bg-medical-700 text-white py-4 rounded-xl font-bold hover:bg-medical-900 transition-colors shadow-lg shadow-medical-500/30 flex items-center justify-center gap-2"
+          >
+            {loading ? (
+              <span className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+            ) : (
+              <>
+                <KeyRound className="w-5 h-5" />
+                ورود به پنل
+              </>
+            )}
+          </button>
+        </form>
+        <p className="mt-6 text-xs text-gray-400">
+           نسخه ایمن و آفلاین
+        </p>
+      </div>
+    </div>
+  );
+};
+
 
 // 0. Prescription Paper (Engine)
 const PrescriptionPaper = ({ 
@@ -1072,6 +1148,94 @@ const DoctorProfileSettings = () => {
   );
 };
 
+// 2.2 Security Settings
+const SecuritySettings = () => {
+  const { showToast } = useToast();
+  const [oldPass, setOldPass] = useState('');
+  const [newPass, setNewPass] = useState('');
+  const [confirmPass, setConfirmPass] = useState('');
+  
+  const handleChangePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!oldPass || !newPass || !confirmPass) {
+      showToast('لطفا تمام فیلدها را پر کنید', 'error');
+      return;
+    }
+    
+    if (newPass !== confirmPass) {
+      showToast('تکرار رمز عبور جدید مطابقت ندارد', 'error');
+      return;
+    }
+    
+    // 1. Verify old pass
+    const isValid = await dbParams.checkAuth(oldPass);
+    if (!isValid) {
+      showToast('رمز عبور فعلی اشتباه است', 'error');
+      return;
+    }
+    
+    // 2. Set new pass
+    await dbParams.changePassword(newPass);
+    showToast('رمز عبور با موفقیت تغییر کرد', 'success');
+    setOldPass('');
+    setNewPass('');
+    setConfirmPass('');
+  };
+
+  return (
+    <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+      <div className="flex items-center gap-2 mb-6">
+        <ShieldCheck className="w-6 h-6 text-medical-700" />
+        <h2 className="text-lg font-bold text-gray-800">امنیت و رمز عبور</h2>
+      </div>
+
+      <form onSubmit={handleChangePassword} className="max-w-md space-y-4">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">رمز عبور فعلی</label>
+          <input 
+            type="password"
+            className="w-full p-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-medical-500 outline-none text-left font-mono"
+            dir="ltr"
+            value={oldPass}
+            onChange={e => setOldPass(e.target.value)}
+          />
+        </div>
+        
+        <div className="pt-2 border-t border-dashed border-gray-200">
+           <label className="block text-sm font-medium text-gray-700 mb-1 mt-2">رمز عبور جدید</label>
+           <input 
+             type="password"
+             className="w-full p-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-medical-500 outline-none text-left font-mono"
+             dir="ltr"
+             value={newPass}
+             onChange={e => setNewPass(e.target.value)}
+           />
+        </div>
+
+        <div>
+           <label className="block text-sm font-medium text-gray-700 mb-1">تکرار رمز جدید</label>
+           <input 
+             type="password"
+             className="w-full p-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-medical-500 outline-none text-left font-mono"
+             dir="ltr"
+             value={confirmPass}
+             onChange={e => setConfirmPass(e.target.value)}
+           />
+        </div>
+
+        <div className="pt-4">
+          <button 
+            type="submit"
+            className="w-full bg-gray-800 text-white py-3 rounded-xl font-bold hover:bg-black transition-colors"
+          >
+            تغییر رمز عبور
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+};
+
 // 2.2 Drugs Manager (Enhanced with Reference Library)
 const DrugsManager = () => {
   const { showToast } = useToast();
@@ -1864,7 +2028,7 @@ const PrintLayoutDesigner = () => {
 
 // 4. Settings View Container
 const SettingsView = () => {
-  const [activeSubTab, setActiveSubTab] = useState<'profile' | 'designer' | 'backup'>('profile');
+  const [activeSubTab, setActiveSubTab] = useState<'profile' | 'designer' | 'backup' | 'security'>('profile');
 
   return (
     <div className="max-w-7xl mx-auto p-4 md:p-8 h-screen md:h-auto flex flex-col">
@@ -1892,12 +2056,20 @@ const SettingsView = () => {
           <RefreshCw className="w-4 h-4"/>
           مدیریت داده‌ها
         </button>
+        <button 
+          onClick={() => setActiveSubTab('security')}
+          className={`px-4 py-2 rounded-xl whitespace-nowrap transition-colors flex items-center gap-2 ${activeSubTab === 'security' ? 'bg-gray-800 text-white' : 'bg-white text-gray-600 hover:bg-gray-100'}`}
+        >
+          <ShieldCheck className="w-4 h-4"/>
+          امنیت
+        </button>
       </div>
 
       <div className="flex-1 md:min-h-[500px]">
         {activeSubTab === 'profile' && <DoctorProfileSettings />}
         {activeSubTab === 'designer' && <PrintLayoutDesigner />}
         {activeSubTab === 'backup' && <BackupManager />}
+        {activeSubTab === 'security' && <SecuritySettings />}
       </div>
     </div>
   );
@@ -2311,6 +2483,7 @@ const Workbench = ({
 // 5. Main App Container
 function MainApp() {
   const { showToast } = useToast();
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [activeTab, setActiveTab] = useState('dashboard');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingPatient, setEditingPatient] = useState<Patient | null>(null);
@@ -2331,8 +2504,10 @@ function MainApp() {
        const drugs = await dbParams.getAllDrugs();
        setDbDrugs(drugs);
     };
-    loadData();
-  }, [activeTab, refreshTrigger]);
+    if (isAuthenticated) {
+      loadData();
+    }
+  }, [activeTab, refreshTrigger, isAuthenticated]);
 
   const handleSavePatient = async (patient: Patient) => {
     await dbParams.addPatient(patient); 
@@ -2382,6 +2557,11 @@ function MainApp() {
       setActivePatient(null); 
     }, 500);
   };
+
+  // Auth Guard
+  if (!isAuthenticated) {
+    return <LoginScreen onLogin={() => setIsAuthenticated(true)} />;
+  }
 
   return (
     <div className="min-h-screen bg-cream-50 text-gray-800 font-sans md:pr-64">
