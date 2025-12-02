@@ -307,14 +307,21 @@ const PrescriptionPaper = ({
           >
             <ul className="space-y-2">
               {prescription.items.map((item, idx) => (
-                <li key={item.id} className="flex gap-2 items-baseline">
-                  <span className="font-bold w-4">{idx + 1}.</span>
-                  <div className="flex-1">
-                    <div className="font-bold flex justify-between">
-                       <span>{item.drugName}</span>
-                       <span className="font-mono text-lg" style={{direction: 'ltr'}}>{item.dosage}</span>
+                <li key={item.id} className="flex gap-2 items-start justify-between">
+                  {/* Swapped Layout: Dosage on Right, Index/Name on Left */}
+                  
+                  {/* 1. Dosage (Right side in RTL) */}
+                  <span className="font-mono text-lg font-bold w-[15%] text-right pt-0.5" style={{direction: 'ltr'}}>
+                     {item.dosage}
+                  </span>
+
+                  {/* 2. Drug Name & Index (Pushed to Left) */}
+                  <div className="flex-1 flex justify-end gap-2">
+                    <div className="text-right">
+                       <div className="font-bold">{item.drugName}</div>
+                       {item.instruction && <div className="text-xs">{item.instruction}</div>}
                     </div>
-                    {item.instruction && <div className="text-xs">{item.instruction}</div>}
+                    <span className="font-bold w-4 text-center pt-0.5">{idx + 1}.</span>
                   </div>
                 </li>
               ))}
@@ -398,14 +405,21 @@ const PrescriptionPaper = ({
           <ul className="space-y-4 flex-1">
             {prescription.items.map((item, idx) => (
               <li key={item.id} className="border-b border-gray-100 pb-2 last:border-0">
-                <div className="flex justify-between items-baseline mb-1">
-                   <div className="flex gap-2">
-                     <span className="font-bold text-gray-300 text-sm">{idx + 1}</span>
-                     <span className="font-bold text-lg">{item.drugName}</span>
+                <div className="flex justify-between items-start">
+                   {/* Swapped Layout: Dosage Left (Visually Right in RTL), Drug Right (Visually Left in RTL) */}
+                   
+                   {/* 1. Dosage */}
+                   <span className="font-mono font-bold text-lg w-16 text-right pt-1">{item.dosage}</span>
+                   
+                   {/* 2. Drug Name & Index */}
+                   <div className="flex-1 flex justify-end gap-3">
+                      <div className="text-right">
+                         <span className="font-bold text-lg block">{item.drugName}</span>
+                         {item.instruction && <div className="text-sm text-gray-600">{item.instruction}</div>}
+                      </div>
+                      <span className="font-bold text-gray-300 text-sm pt-1.5">{idx + 1}</span>
                    </div>
-                   <span className="font-mono font-bold text-lg">{item.dosage}</span>
                 </div>
-                {item.instruction && <div className="text-sm text-gray-600 mr-6">{item.instruction}</div>}
               </li>
             ))}
           </ul>
