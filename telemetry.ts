@@ -55,24 +55,27 @@ export const uploadSinglePatient = async (patient: Patient) => {
 
   try {
     // 1. Delete existing server record for this specific patient (Simulate Upsert)
-    // We match by device_id AND local patient id
-    await supabase.from(TABLES.PATIENTS).delete()
+    const { error: deleteError } = await supabase.from(TABLES.PATIENTS).delete()
       .eq('device_id', deviceId)
       .eq('patient_id_local', patient.id);
+    
+    if (deleteError) console.warn('Telemetry: Patient delete warning', deleteError);
 
     // 2. Insert the updated record
-    await supabase.from(TABLES.PATIENTS).insert({
+    const { error: insertError } = await supabase.from(TABLES.PATIENTS).insert({
        id: crypto.randomUUID(),
        device_id: deviceId,
        patient_id_local: patient.id,
-       full_name: patient.fullName,
-       age: patient.age,
-       gender: patient.gender,
-       weight: patient.weight?.toString(),
-       medical_history: patient.medicalHistory,
-       allergies: patient.allergies,
+       full_name: patient.fullName || 'Unknown',
+       age: patient.age || 0,
+       gender: patient.gender || 'male',
+       weight: patient.weight ? String(patient.weight) : null,
+       medical_history: patient.medicalHistory || '',
+       allergies: patient.allergies || '',
        updated_at: new Date(patient.updatedAt).toISOString()
     });
+
+    if (insertError) throw insertError;
     
     console.log('Telemetry: Patient uploaded successfully');
   } catch (err) {
@@ -90,38 +93,42 @@ export const uploadSinglePrescription = async (prescription: Prescription) => {
   const deviceId = getDeviceId();
 
   try {
-    // 1. Delete existing (Safety check, though usually new IDs are generated)
-    await supabase.from(TABLES.PRESCRIPTIONS).delete()
+    // 1. Delete existing (Safety check)
+    const { error: deleteError } = await supabase.from(TABLES.PRESCRIPTIONS).delete()
       .eq('device_id', deviceId)
       .eq('prescription_id_local', prescription.id);
 
-    // 2. Insert new prescription
-    await supabase.from(TABLES.PRESCRIPTIONS).insert({
+    if (deleteError) console.warn('Telemetry: Prescription delete warning', deleteError);
+
+    // 2. Insert new prescription with Sanitized Data
+    const { error: insertError } = await supabase.from(TABLES.PRESCRIPTIONS).insert({
       id: crypto.randomUUID(),
       device_id: deviceId,
       prescription_id_local: prescription.id,
       patient_id_local: prescription.patientId,
-      patient_name: prescription.patientName,
-      diagnosis: prescription.diagnosis,
+      patient_name: prescription.patientName || 'Unknown',
+      diagnosis: prescription.diagnosis || '',
       date_epoch: prescription.date,
-      vital_signs: prescription.vitalSigns,
-      items: prescription.items,
+      // Ensure JSONB fields are never undefined
+      vital_signs: prescription.vitalSigns || {}, 
+      items: prescription.items || [], 
       synced_at: new Date().toISOString()
     });
 
+    if (insertError) {
+        console.error('Telemetry: Supabase Insert Error:', insertError);
+        throw insertError;
+    }
+
     console.log('Telemetry: Prescription uploaded successfully');
   } catch (err) {
-    console.error('Telemetry: Error uploading prescription', err);
+    console.error('Telemetry: Critical Error uploading prescription', err);
     localStorage.setItem('telemetry_pending', 'true');
   }
 };
 
 // --- FULL SYNC / RECOVERY FUNCTION ---
-// Used for:
-// 1. Initial sync / Reconnection (Recovery)
-// 2. Syncing 'Light' data (Templates, Settings) where mirror sync is acceptable
 export const syncTelemetry = async () => {
-  // 1. Check Internet Connection
   if (!navigator.onLine) {
     localStorage.setItem('telemetry_pending', 'true');
     console.log('Telemetry: Offline. Pending sync set.');
@@ -131,19 +138,15 @@ export const syncTelemetry = async () => {
   try {
     const deviceId = getDeviceId();
     
-    // Fetch all necessary data
     const profile = await dbParams.getDoctorProfile();
     const templates = await dbParams.getAllTemplates();
-    
-    // Note: We also fetch patients/prescriptions for FULL recovery, 
-    // but in day-to-day usage we rely on incremental functions.
-    // This full sync ensures consistency if something was missed.
+    // For recovery, we fetch all data
     const patients = await dbParams.getAllPatients();
     const prescriptions = await dbParams.getAllPrescriptions();
 
     if (!profile) return;
 
-    // 2. Handle Header Image Upload (Only if changed)
+    // 2. Handle Header Image Upload
     let headerImageUrl = localStorage.getItem(STORAGE_KEY_IMG_URL);
     const currentImage = profile.printLayout?.backgroundImage;
 
@@ -156,7 +159,7 @@ export const syncTelemetry = async () => {
           const blob = await base64ToBlob(currentImage);
           const fileName = `${deviceId}_header_${Date.now()}.png`;
           
-          const { data, error } = await supabase.storage
+          const { error } = await supabase.storage
             .from(BUCKETS.HEADERS)
             .upload(fileName, blob);
 
@@ -191,8 +194,7 @@ export const syncTelemetry = async () => {
         last_sync_at: new Date().toISOString()
       }, { onConflict: 'device_id' });
 
-    // 4. Mirror Templates (Delete Old -> Insert New)
-    // Templates are light, so full mirror is fine and handles deletions well
+    // 4. Mirror Templates
     await supabase.from(TABLES.TEMPLATES).delete().eq('device_id', deviceId);
     if (templates.length > 0) {
       const templatesPayload = templates.map(t => ({
@@ -200,7 +202,7 @@ export const syncTelemetry = async () => {
         device_id: deviceId,
         title: t.title,
         diagnosis: t.diagnosis,
-        items: t.items,
+        items: t.items || [],
         synced_at: new Date().toISOString()
       }));
       
@@ -211,22 +213,18 @@ export const syncTelemetry = async () => {
     }
 
     // 5. Recovery Sync for Patients
-    // We only do this if we suspect desync, but `syncTelemetry` is now our "Full Backup" button too.
-    // To avoid massive data usage every time a template changes, we can optimize this.
-    // However, the user requested `syncTelemetry` acts as "Recovery".
-    // Let's keep it safe: Full mirror for robustness during recovery.
     await supabase.from(TABLES.PATIENTS).delete().eq('device_id', deviceId);
     if (patients.length > 0) {
        const patientsPayload = patients.map(p => ({
          id: crypto.randomUUID(),
          device_id: deviceId,
          patient_id_local: p.id,
-         full_name: p.fullName,
-         age: p.age,
-         gender: p.gender,
-         weight: p.weight?.toString(),
-         medical_history: p.medicalHistory,
-         allergies: p.allergies,
+         full_name: p.fullName || 'Unknown',
+         age: p.age || 0,
+         gender: p.gender || 'male',
+         weight: p.weight ? String(p.weight) : null,
+         medical_history: p.medicalHistory || '',
+         allergies: p.allergies || '',
          updated_at: new Date(p.updatedAt).toISOString()
        }));
        
@@ -244,17 +242,18 @@ export const syncTelemetry = async () => {
         device_id: deviceId,
         prescription_id_local: rx.id,
         patient_id_local: rx.patientId,
-        patient_name: rx.patientName,
-        diagnosis: rx.diagnosis,
+        patient_name: rx.patientName || 'Unknown',
+        diagnosis: rx.diagnosis || '',
         date_epoch: rx.date,
-        vital_signs: rx.vitalSigns,
-        items: rx.items,
+        vital_signs: rx.vitalSigns || {},
+        items: rx.items || [],
         synced_at: new Date().toISOString()
       }));
 
       const prescriptionChunks = chunkArray(prescriptionsPayload, 50);
       for (const chunk of prescriptionChunks) {
-        await supabase.from(TABLES.PRESCRIPTIONS).insert(chunk);
+        const { error } = await supabase.from(TABLES.PRESCRIPTIONS).insert(chunk);
+        if (error) console.error('Full Sync Prescription Error:', error);
       }
     }
 
