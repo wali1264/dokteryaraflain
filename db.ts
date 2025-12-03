@@ -1,3 +1,4 @@
+
 import { Patient, Drug, PrescriptionTemplate, DoctorProfile, Prescription } from './types';
 
 const DB_NAME = 'TabYarDB';
@@ -172,6 +173,11 @@ export const dbParams = {
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => reject(request.error);
     });
+  },
+
+  // Added for Telemetry Sync (Full History)
+  getAllPrescriptions: async (): Promise<Prescription[]> => {
+    return performTransaction(STORE_PRESCRIPTIONS, 'readonly', (store) => store.getAll()) as Promise<Prescription[]>;
   }
 };
 

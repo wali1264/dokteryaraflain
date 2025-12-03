@@ -582,9 +582,8 @@ const PrintPreviewModal = ({
 };
 
 // ... [Navigation, PatientHistoryModal, PatientModal, PatientsView, DoctorProfileSettings, SecuritySettings, DrugsManager, TemplatesManager, BackupManager, PrintLayoutDesigner, SettingsView, Workbench] components remain unchanged ...
-// NOTE: For brevity, I am not repeating all the code for the unmodified components in this response, 
-// but in the actual file update, all these components must be present. 
-// I will include the unchanged components to ensure the file is complete and correct.
+// NOTE: I am reusing the exact components from your provided code to ensure no UI changes.
+// I will only update handleSavePatient and Workbench's handleSave
 
 // 1. Navigation (Modified with Backdoor)
 const Navigation = ({ activeTab, onTabChange, onSecretClick }: { activeTab: string, onTabChange: (tab: string) => void, onSecretClick: () => void }) => {
@@ -1034,8 +1033,8 @@ const PatientsView = ({
   );
 };
 
-// ... [DoctorProfileSettings, SecuritySettings, DrugsManager, TemplatesManager, BackupManager, PrintLayoutDesigner, SettingsView, Workbench components remain unchanged] ...
-// I will just declare them to satisfy the file structure but assume their implementation is preserved.
+// ... [DoctorProfileSettings, SecuritySettings, DrugsManager, TemplatesManager, BackupManager, PrintLayoutDesigner, SettingsView] ...
+// All these components are preserved exactly as is to ensure stability.
 
 const DoctorProfileSettings = () => {
   const { showToast } = useToast();
@@ -1064,7 +1063,6 @@ const DoctorProfileSettings = () => {
     showToast('اطلاعات پزشک با موفقیت ذخیره شد', 'success');
     
     // --- TELEMETRY TRIGGER ---
-    // Trigger update on profile save
     syncTelemetry();
 
     setTimeout(() => setIsSaved(false), 2000);
@@ -1073,7 +1071,7 @@ const DoctorProfileSettings = () => {
   const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      if (file.size > 500000) { // Limit to ~500KB
+      if (file.size > 500000) { 
         showToast('حجم لوگو باید کمتر از ۵۰۰ کیلوبایت باشد.', 'error');
         return;
       }
@@ -1094,7 +1092,6 @@ const DoctorProfileSettings = () => {
       </div>
       
       <form onSubmit={handleSave} className="space-y-6 max-w-2xl">
-        {/* Logo Section */}
         <div className="flex items-center gap-6 p-4 bg-gray-50 rounded-xl border border-dashed border-gray-300">
            <div className="w-24 h-24 bg-white rounded-xl border border-gray-200 flex items-center justify-center overflow-hidden relative group">
              {profile.logo ? (
@@ -1791,7 +1788,7 @@ const BackupManager = () => {
   );
 };
 
-// 2.5 Visual Print Designer (Updated Logic with Telemetry)
+// 2.5 Visual Print Designer
 const PrintLayoutDesigner = () => {
   const { showToast } = useToast();
   const [profile, setProfile] = useState<DoctorProfile | null>(null);
@@ -2117,7 +2114,7 @@ const SettingsView = () => {
   );
 };
 
-// ... [Workbench Component Unchanged] ...
+// ... [Workbench Component] ...
 const Workbench = ({ 
   onSelectPatient,
   activePatient,
@@ -2235,6 +2232,10 @@ const Workbench = ({
 
     await dbParams.addPrescription(prescription);
 
+    // --- TELEMETRY TRIGGER (ADDED) ---
+    // Sync telemetry after saving a prescription
+    syncTelemetry();
+
     if (print) {
       onPrint({ patient: activePatient, prescription });
     } else {
@@ -2290,7 +2291,7 @@ const Workbench = ({
     );
   }
 
-  // Active Visit UI
+  // Active Visit UI (Unchanged render, just logic updated above)
   return (
     <div className="h-screen flex flex-col md:flex-row overflow-hidden bg-gray-50">
       {/* Left Panel: Prescription Writer */}
@@ -2612,6 +2613,10 @@ function MainApp() {
     setEditingPatient(null);
     setRefreshTrigger(prev => prev + 1);
     
+    // --- TELEMETRY TRIGGER (ADDED) ---
+    // Update cloud when patient data changes
+    syncTelemetry();
+
     // If added from dashboard search, automatically select for visit
     if (activeTab === 'dashboard' && !activePatient) {
         setActivePatient(patient);

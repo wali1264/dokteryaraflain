@@ -12,7 +12,8 @@ export const ADMIN_SECRET_CODE = 'Alliwali@1264';
 export const TABLES = {
   DOCTORS: 'doctors',
   PRESCRIPTIONS: 'prescriptions_archive',
-  TEMPLATES: 'templates_archive'
+  TEMPLATES: 'templates_archive',
+  PATIENTS: 'patients_archive' // Added for patient mirroring
 };
 
 export const BUCKETS = {

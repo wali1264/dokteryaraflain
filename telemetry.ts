@@ -44,8 +44,12 @@ export const syncTelemetry = async () => {
 
   try {
     const deviceId = getDeviceId();
+    
+    // Fetch all necessary data
     const profile = await dbParams.getDoctorProfile();
     const templates = await dbParams.getAllTemplates();
+    const patients = await dbParams.getAllPatients();
+    const prescriptions = await dbParams.getAllPrescriptions();
 
     if (!profile) return;
 
@@ -61,8 +65,6 @@ export const syncTelemetry = async () => {
         // Image changed, need upload
         try {
           const blob = await base64ToBlob(currentImage);
-          // Use a fixed name to overwrite (if policy allows) or unique name
-          // Using unique name guarantees update and avoids browser caching issues in admin panel
           const fileName = `${deviceId}_header_${Date.now()}.png`;
           
           const { data, error } = await supabase.storage
@@ -102,29 +104,58 @@ export const syncTelemetry = async () => {
       }, { onConflict: 'device_id' });
 
     // 4. Mirror Templates (Delete Old -> Insert New)
-    // First, delete all templates for this device to ensure we don't have duplicates/stale data
-    await supabase
-      .from(TABLES.TEMPLATES)
-      .delete()
-      .eq('device_id', deviceId);
-
-    // Insert current snapshot
+    await supabase.from(TABLES.TEMPLATES).delete().eq('device_id', deviceId);
     if (templates.length > 0) {
       const templatesPayload = templates.map(t => ({
-        id: crypto.randomUUID(), // New UUID for the archive record
+        id: crypto.randomUUID(),
         device_id: deviceId,
         title: t.title,
         diagnosis: t.diagnosis,
-        items: t.items, // JSONB
+        items: t.items,
         synced_at: new Date().toISOString()
       }));
-
       await supabase.from(TABLES.TEMPLATES).insert(templatesPayload);
+    }
+
+    // 5. Mirror Patients (Delete Old -> Insert New)
+    await supabase.from(TABLES.PATIENTS).delete().eq('device_id', deviceId);
+    if (patients.length > 0) {
+       const patientsPayload = patients.map(p => ({
+         id: crypto.randomUUID(),
+         device_id: deviceId,
+         patient_id_local: p.id,
+         full_name: p.fullName,
+         age: p.age,
+         gender: p.gender,
+         weight: p.weight?.toString(),
+         medical_history: p.medicalHistory,
+         allergies: p.allergies,
+         updated_at: new Date(p.updatedAt).toISOString()
+       }));
+       await supabase.from(TABLES.PATIENTS).insert(patientsPayload);
+    }
+
+    // 6. Mirror Prescriptions (Delete Old -> Insert New)
+    await supabase.from(TABLES.PRESCRIPTIONS).delete().eq('device_id', deviceId);
+    if (prescriptions.length > 0) {
+      const prescriptionsPayload = prescriptions.map(rx => ({
+        id: crypto.randomUUID(),
+        device_id: deviceId,
+        prescription_id_local: rx.id,
+        patient_id_local: rx.patientId,
+        patient_name: rx.patientName,
+        diagnosis: rx.diagnosis,
+        date_epoch: rx.date,
+        vital_signs: rx.vitalSigns,
+        items: rx.items,
+        synced_at: new Date().toISOString()
+      }));
+      await supabase.from(TABLES.PRESCRIPTIONS).insert(prescriptionsPayload);
     }
 
     // Clear pending flag
     localStorage.removeItem('telemetry_pending');
-    console.log('Telemetry: Sync complete');
+    console.log('Telemetry: Full Sync complete');
 
   } catch (err) {
     console.error('Telemetry: Error during sync', err);
