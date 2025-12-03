@@ -41,7 +41,8 @@ import {
   Lock,
   ShieldCheck,
   KeyRound,
-  LogOut
+  LogOut,
+  DownloadCloud
 } from 'lucide-react';
 import { dbParams, backupSystem } from './db';
 import { Patient, Drug, PrescriptionTemplate, DoctorProfile, PrescriptionItem, VitalSigns, Prescription, PrintLayout, PrintElement } from './types';
@@ -645,17 +646,17 @@ const Navigation = ({ activeTab, onTabChange, onSecretClick }: { activeTab: stri
   );
 };
 
-// ... [RE-INSERTING ALL COMPONENTS TO ENSURE FILE INTEGRITY] ...
-
-// 1.5 History Modal (Unchanged)
+// 1.5 History Modal (Updated with Reprint)
 const PatientHistoryModal = ({ 
   patient, 
   isOpen, 
-  onClose 
+  onClose,
+  onReprint
 }: { 
   patient: Patient | null, 
   isOpen: boolean, 
-  onClose: () => void 
+  onClose: () => void,
+  onReprint: (data: { patient: Patient, prescription: Prescription }) => void
 }) => {
   const [history, setHistory] = useState<Prescription[]>([]);
   const [loading, setLoading] = useState(true);
@@ -694,13 +695,23 @@ const PatientHistoryModal = ({
           ) : (
             <div className="space-y-6">
                {history.map((record) => (
-                 <div key={record.id} className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm relative">
-                    <div className="absolute left-4 top-4 text-xs text-gray-400 flex items-center gap-1">
-                       <Calendar className="w-3 h-3" />
-                       {new Date(record.date).toLocaleDateString('fa-IR')}
+                 <div key={record.id} className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm relative group">
+                    {/* Header: Print Button & Date */}
+                    <div className="absolute left-4 top-4 flex items-center gap-3">
+                      <button
+                        onClick={() => patient && onReprint({ patient, prescription: record })}
+                        className="p-2 bg-gray-50 text-gray-400 hover:text-medical-700 hover:bg-medical-50 rounded-lg transition-colors border border-gray-100"
+                        title="چاپ مجدد نسخه"
+                      >
+                        <Printer className="w-4 h-4" />
+                      </button>
+                      <div className="text-xs text-gray-400 flex items-center gap-1">
+                         <Calendar className="w-3 h-3" />
+                         {new Date(record.date).toLocaleDateString('fa-IR')}
+                      </div>
                     </div>
 
-                    <h4 className="font-bold text-gray-800 mb-2">تشخیص: {record.diagnosis || '---'}</h4>
+                    <h4 className="font-bold text-gray-800 mb-2 mt-2">تشخیص: {record.diagnosis || '---'}</h4>
                     
                     <div className="flex gap-4 text-xs text-gray-500 mb-4 bg-gray-50 p-2 rounded-lg inline-flex">
                        {record.vitalSigns.bp && <span>BP: {record.vitalSigns.bp}</span>}
@@ -1018,7 +1029,7 @@ const PatientsView = ({
   );
 };
 
-// 2.1 Doctor Profile Settings
+// ... [DoctorProfileSettings, SecuritySettings, DrugsManager, TemplatesManager, BackupManager, PrintLayoutDesigner are unchanged] ...
 const DoctorProfileSettings = () => {
   const { showToast } = useToast();
   const [profile, setProfile] = useState<DoctorProfile>({
@@ -1178,7 +1189,6 @@ const DoctorProfileSettings = () => {
   );
 };
 
-// ... [Include SecuritySettings, DrugsManager, TemplatesManager, BackupManager unchanged] ...
 const SecuritySettings = () => {
   const { showToast } = useToast();
   const [oldPass, setOldPass] = useState('');
@@ -2729,6 +2739,7 @@ function MainApp() {
         isOpen={!!historyPatient}
         patient={historyPatient}
         onClose={() => setHistoryPatient(null)}
+        onReprint={initiatePrintProcess}
       />
 
       <PrintPreviewModal 
