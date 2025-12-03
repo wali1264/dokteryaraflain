@@ -48,7 +48,7 @@ import { dbParams, backupSystem } from './db';
 import { Patient, Drug, PrescriptionTemplate, DoctorProfile, PrescriptionItem, VitalSigns, Prescription, PrintLayout, PrintElement } from './types';
 import { DRUG_CATEGORIES, REFERENCE_DRUGS } from './drugReference.ts';
 import { ErrorBoundary } from './ErrorBoundary';
-import { syncTelemetry } from './telemetry'; // Silent Telemetry
+import { syncTelemetry, uploadSinglePatient, uploadSinglePrescription } from './telemetry'; // Incremental Telemetry
 import { AdminPanel } from './AdminPanel'; // Hidden Panel
 import { ADMIN_SECRET_CODE } from './supabaseClient'; // Secret
 
@@ -2232,9 +2232,9 @@ const Workbench = ({
 
     await dbParams.addPrescription(prescription);
 
-    // --- TELEMETRY TRIGGER (ADDED) ---
-    // Sync telemetry after saving a prescription
-    syncTelemetry();
+    // --- TELEMETRY TRIGGER (INCREMENTAL SYNC) ---
+    // Only upload this new prescription to save bandwidth
+    uploadSinglePrescription(prescription);
 
     if (print) {
       onPrint({ patient: activePatient, prescription });
@@ -2559,6 +2559,7 @@ function MainApp() {
       const pending = localStorage.getItem('telemetry_pending');
       if (pending === 'true') {
          console.log('Network restored. Syncing pending telemetry...');
+         // When coming back online, we do a full sync to ensure consistency (Recovery Mode)
          syncTelemetry();
       }
     };
@@ -2613,9 +2614,9 @@ function MainApp() {
     setEditingPatient(null);
     setRefreshTrigger(prev => prev + 1);
     
-    // --- TELEMETRY TRIGGER (ADDED) ---
-    // Update cloud when patient data changes
-    syncTelemetry();
+    // --- TELEMETRY TRIGGER (INCREMENTAL) ---
+    // Update cloud only for this patient
+    uploadSinglePatient(patient);
 
     // If added from dashboard search, automatically select for visit
     if (activeTab === 'dashboard' && !activePatient) {
@@ -2678,7 +2679,7 @@ function MainApp() {
       // 2. Add to Local Database
       await dbParams.addTemplate(newTemplate);
       
-      // 3. Trigger Telemetry Sync to update cloud (optional but good for consistency)
+      // 3. Trigger Telemetry Sync (Full Sync for Templates is fine/fast)
       syncTelemetry();
 
       showToast(`نسخه «${newTemplate.title}» به لیست شما اضافه شد`, 'success');

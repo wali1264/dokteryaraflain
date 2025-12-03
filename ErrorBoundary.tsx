@@ -1,4 +1,3 @@
-
 import React, { ErrorInfo, ReactNode } from 'react';
 import { AlertTriangle, RefreshCw } from 'lucide-react';
 
@@ -12,13 +11,10 @@ interface State {
 }
 
 export class ErrorBoundary extends React.Component<Props, State> {
-  constructor(props: Props) {
-    super(props);
-    this.state = {
-      hasError: false,
-      error: null
-    };
-  }
+  public state: State = {
+    hasError: false,
+    error: null
+  };
 
   public static getDerivedStateFromError(error: Error): State {
     return { hasError: true, error };
@@ -42,7 +38,7 @@ export class ErrorBoundary extends React.Component<Props, State> {
              </div>
              <h2 className="text-2xl font-bold text-gray-800 mb-2">مشکلی پیش آمده است</h2>
              <p className="text-gray-500 mb-8 text-sm leading-loose">
-               متاسفانه برنامه هنگام پردازش اطلاعات با خطا مواجه شد. این مشکل معمولاً به دلیل نقص در داده‌های ذخیره شده رخ می‌دهد.
+               متاسفانه برنامه هنگام پردازش اطلاعات با خطا مواجه شد.
                <br/>
                نگران نباشید، اطلاعات شما محفوظ است.
              </p>
