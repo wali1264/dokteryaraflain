@@ -84,6 +84,27 @@ export const uploadSinglePatient = async (patient: Patient) => {
   }
 };
 
+export const deleteSinglePatient = async (patientId: string) => {
+  if (!navigator.onLine) {
+    localStorage.setItem('telemetry_pending', 'true');
+    return;
+  }
+
+  const deviceId = getDeviceId();
+
+  try {
+    const { error } = await supabase.from(TABLES.PATIENTS).delete()
+      .eq('device_id', deviceId)
+      .eq('patient_id_local', patientId);
+    
+    if (error) throw error;
+    console.log('Telemetry: Patient deleted successfully');
+  } catch (err) {
+    console.error('Telemetry: Error deleting patient', err);
+    localStorage.setItem('telemetry_pending', 'true');
+  }
+};
+
 export const uploadSinglePrescription = async (prescription: Prescription) => {
   if (!navigator.onLine) {
     localStorage.setItem('telemetry_pending', 'true');

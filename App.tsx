@@ -48,7 +48,7 @@ import { dbParams, backupSystem } from './db';
 import { Patient, Drug, PrescriptionTemplate, DoctorProfile, PrescriptionItem, VitalSigns, Prescription, PrintLayout, PrintElement } from './types';
 import { DRUG_CATEGORIES, REFERENCE_DRUGS } from './drugReference.ts';
 import { ErrorBoundary } from './ErrorBoundary';
-import { syncTelemetry, uploadSinglePatient, uploadSinglePrescription } from './telemetry'; // Incremental Telemetry
+import { syncTelemetry, uploadSinglePatient, uploadSinglePrescription, deleteSinglePatient } from './telemetry'; // Updated imports
 import { AdminPanel } from './AdminPanel'; // Hidden Panel
 import { ADMIN_SECRET_CODE } from './supabaseClient'; // Secret
 
@@ -139,7 +139,7 @@ const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ children }) =>
 
 // --- SHARED COMPONENTS ---
 
-// 0. Login Screen
+// 0. Login Screen (Unchanged)
 const LoginScreen = ({ onLogin }: { onLogin: () => void }) => {
   const { showToast } = useToast();
   const [password, setPassword] = useState('');
@@ -211,7 +211,7 @@ const LoginScreen = ({ onLogin }: { onLogin: () => void }) => {
 };
 
 
-// 0. Prescription Paper (Engine)
+// 0. Prescription Paper (Engine) (Unchanged)
 const PrescriptionPaper = ({ 
   data,
   printSettings
@@ -906,7 +906,7 @@ const PatientModal = ({
   );
 };
 
-// 3. PatientsView (Unchanged)
+// 3. PatientsView (Updated with Delete)
 const PatientsView = ({ 
   onEdit, 
   onSelect, 
@@ -919,6 +919,7 @@ const PatientsView = ({
   const [patients, setPatients] = useState<Patient[]>([]);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
+  const { showToast } = useToast();
 
   useEffect(() => {
     loadPatients();
@@ -929,6 +930,21 @@ const PatientsView = ({
     data.sort((a, b) => b.updatedAt - a.updatedAt);
     setPatients(data);
     setLoading(false);
+  };
+
+  const handleDelete = async (e: React.MouseEvent, patient: Patient) => {
+    e.stopPropagation();
+    if (confirm(`آیا از حذف پرونده «${patient.fullName}» اطمینان دارید؟\nاین عملیات غیرقابل بازگشت است.`)) {
+       try {
+         await dbParams.deletePatient(patient.id);
+         deleteSinglePatient(patient.id); // Trigger cloud delete
+         showToast('پرونده بیمار با موفقیت حذف شد', 'info');
+         loadPatients();
+       } catch (err) {
+         console.error(err);
+         showToast('خطا در حذف پرونده', 'error');
+       }
+    }
   };
 
   const filteredPatients = patients.filter(p => 
@@ -1007,6 +1023,13 @@ const PatientsView = ({
                     >
                       <Edit2 className="w-4 h-4" />
                     </button>
+                    <button 
+                      onClick={(e) => handleDelete(e, patient)}
+                      className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                      title="حذف پرونده"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
                   </div>
                 </div>
                 
@@ -1033,8 +1056,8 @@ const PatientsView = ({
   );
 };
 
-// ... [DoctorProfileSettings, SecuritySettings, DrugsManager, TemplatesManager, BackupManager, PrintLayoutDesigner, SettingsView] ...
-// All these components are preserved exactly as is to ensure stability.
+// ... [DoctorProfileSettings, SecuritySettings, DrugsManager, TemplatesManager, BackupManager, PrintLayoutDesigner, SettingsView, Workbench] components remain unchanged ...
+// All other components are preserved exactly as is to ensure stability.
 
 const DoctorProfileSettings = () => {
   const { showToast } = useToast();
