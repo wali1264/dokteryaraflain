@@ -42,7 +42,9 @@ import {
   ShieldCheck,
   KeyRound,
   LogOut,
-  DownloadCloud
+  DownloadCloud,
+  Globe,
+  Languages
 } from 'lucide-react';
 import { dbParams, backupSystem } from './db';
 import { Patient, Drug, PrescriptionTemplate, DoctorProfile, PrescriptionItem, VitalSigns, Prescription, PrintLayout, PrintElement } from './types';
@@ -51,6 +53,7 @@ import { ErrorBoundary } from './ErrorBoundary';
 import { syncTelemetry, uploadSinglePatient, uploadSinglePrescription, deleteSinglePatient } from './telemetry'; // Updated imports
 import { AdminPanel } from './AdminPanel'; // Hidden Panel
 import { ADMIN_SECRET_CODE } from './supabaseClient'; // Secret
+import { translations, Language, Direction } from './translations';
 
 // --- CONSTANTS ---
 const MM_TO_PX = 3.7795275591; // 1mm in pixels (approx for screen)
@@ -66,6 +69,56 @@ const DEFAULT_PRINT_ELEMENTS: { [key: string]: PrintElement } = {
   vitalTemp: { id: 'vitalTemp', label: 'دما (T)', x: 110, y: 75, visible: true, width: 15, fontSize: 10, rotation: 0 },
   diagnosis: { id: 'diagnosis', label: 'تشخیص', x: 10, y: 50, visible: true, width: 80, fontSize: 12, rotation: 0 },
   rxItems: { id: 'rxItems', label: 'اقلام دارویی', x: 10, y: 90, visible: true, width: 130, fontSize: 12, rotation: 0 },
+};
+
+// --- LANGUAGE CONTEXT ---
+interface LanguageContextType {
+  language: Language;
+  direction: Direction;
+  setLanguage: (lang: Language) => void;
+  t: (key: keyof typeof translations['fa']) => string;
+}
+
+const LanguageContext = createContext<LanguageContextType | undefined>(undefined);
+
+const useLanguage = () => {
+  const context = useContext(LanguageContext);
+  if (!context) {
+    throw new Error('useLanguage must be used within a LanguageProvider');
+  }
+  return context;
+};
+
+const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const [language, setLanguage] = useState<Language>('fa');
+  const [direction, setDirection] = useState<Direction>('rtl');
+
+  useEffect(() => {
+    // Load persisted language
+    const savedLang = localStorage.getItem('app_language') as Language;
+    if (savedLang && (savedLang === 'fa' || savedLang === 'en' || savedLang === 'ps')) {
+      setLanguage(savedLang);
+    }
+  }, []);
+
+  useEffect(() => {
+    // Update direction and persist
+    const newDir = language === 'en' ? 'ltr' : 'rtl';
+    setDirection(newDir);
+    document.documentElement.dir = newDir;
+    document.documentElement.lang = language;
+    localStorage.setItem('app_language', language);
+  }, [language]);
+
+  const t = (key: keyof typeof translations['fa']): string => {
+    return translations[language][key] || translations['fa'][key] || key;
+  };
+
+  return (
+    <LanguageContext.Provider value={{ language, direction, setLanguage, t }}>
+      {children}
+    </LanguageContext.Provider>
+  );
 };
 
 // --- TOAST NOTIFICATION SYSTEM ---
@@ -139,9 +192,10 @@ const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ children }) =>
 
 // --- SHARED COMPONENTS ---
 
-// 0. Login Screen (Unchanged)
+// 0. Login Screen
 const LoginScreen = ({ onLogin }: { onLogin: () => void }) => {
   const { showToast } = useToast();
+  const { t } = useLanguage();
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -170,19 +224,19 @@ const LoginScreen = ({ onLogin }: { onLogin: () => void }) => {
         <div className="bg-medical-50 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6">
           <Stethoscope className="w-10 h-10 text-medical-700" />
         </div>
-        <h1 className="text-2xl font-bold text-gray-800 mb-2">دکتریار</h1>
-        <p className="text-gray-500 mb-8 text-sm">لطفاً برای ورود رمز عبور خود را وارد کنید</p>
+        <h1 className="text-2xl font-bold text-gray-800 mb-2">{t('login_title')}</h1>
+        <p className="text-gray-500 mb-8 text-sm">{t('login_desc')}</p>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="relative">
-             <Lock className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5" />
+             <Lock className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5 rtl:right-4 ltr:left-4" />
              <input 
                type="password"
                autoFocus
                inputMode="numeric"
                required
-               placeholder="رمز عبور (پیش‌فرض: 12345)"
-               className="w-full pl-4 pr-12 py-4 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-medical-500 outline-none text-center text-lg tracking-widest"
+               placeholder={t('login_placeholder')}
+               className="w-full px-12 py-4 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-medical-500 outline-none text-center text-lg tracking-widest"
                value={password}
                onChange={(e) => setPassword(e.target.value)}
              />
@@ -197,13 +251,13 @@ const LoginScreen = ({ onLogin }: { onLogin: () => void }) => {
             ) : (
               <>
                 <KeyRound className="w-5 h-5" />
-                ورود به پنل
+                {t('login_btn')}
               </>
             )}
           </button>
         </form>
         <p className="mt-6 text-xs text-gray-400">
-           نسخه ایمن و آفلاین
+           {t('login_footer')}
         </p>
       </div>
     </div>
@@ -581,24 +635,22 @@ const PrintPreviewModal = ({
   );
 };
 
-// ... [Navigation, PatientHistoryModal, PatientModal, PatientsView, DoctorProfileSettings, SecuritySettings, DrugsManager, TemplatesManager, BackupManager, PrintLayoutDesigner, SettingsView, Workbench] components remain unchanged ...
-// NOTE: I am reusing the exact components from your provided code to ensure no UI changes.
-// I will only update handleSavePatient and Workbench's handleSave
 
-// 1. Navigation (Modified with Backdoor)
+// 1. Navigation
 const Navigation = ({ activeTab, onTabChange, onSecretClick }: { activeTab: string, onTabChange: (tab: string) => void, onSecretClick: () => void }) => {
+  const { t, direction } = useLanguage();
   const navItems = [
-    { id: 'dashboard', label: 'میز کار', icon: LayoutDashboard }, 
-    { id: 'patients', label: 'بیماران', icon: Users },
-    { id: 'templates', label: 'نسخه‌های آماده', icon: FileText }, 
-    { id: 'drugs', label: 'بانک دارویی', icon: Pill }, 
-    { id: 'settings', label: 'تنظیمات', icon: Settings },
+    { id: 'dashboard', label: t('nav_dashboard'), icon: LayoutDashboard }, 
+    { id: 'patients', label: t('nav_patients'), icon: Users },
+    { id: 'templates', label: t('nav_templates'), icon: FileText }, 
+    { id: 'drugs', label: t('nav_drugs'), icon: Pill }, 
+    { id: 'settings', label: t('nav_settings'), icon: Settings },
   ];
 
   return (
     <>
       {/* Desktop Sidebar */}
-      <div className="hidden md:flex flex-col w-64 bg-white border-l border-gray-200 h-full fixed right-0 top-0 z-20 shadow-lg no-print">
+      <div className={`hidden md:flex flex-col w-64 bg-white border-l border-gray-200 h-full fixed top-0 z-20 shadow-lg no-print ${direction === 'rtl' ? 'right-0 border-l' : 'left-0 border-r'}`}>
         {/* LOGO AREA - Backdoor Trigger */}
         <div 
           className="p-6 flex items-center justify-center border-b border-gray-100 cursor-default select-none active:scale-95 transition-transform"
@@ -607,7 +659,7 @@ const Navigation = ({ activeTab, onTabChange, onSecretClick }: { activeTab: stri
           <div className="bg-medical-100 p-2 rounded-full pointer-events-none">
             <Stethoscope className="w-8 h-8 text-medical-700" />
           </div>
-          <span className="mr-3 text-xl font-bold text-gray-800 pointer-events-none">دکتریار</span>
+          <span className={`font-bold text-gray-800 pointer-events-none text-xl ${direction === 'rtl' ? 'mr-3' : 'ml-3'}`}>{t('app_name')}</span>
         </div>
 
         <div className="flex-1 py-6 space-y-2 px-4">
@@ -621,13 +673,13 @@ const Navigation = ({ activeTab, onTabChange, onSecretClick }: { activeTab: stri
                   : 'text-gray-500 hover:bg-gray-50 hover:text-gray-700'
               }`}
             >
-              <item.icon className={`w-5 h-5 ml-3 ${activeTab === item.id ? 'fill-current opacity-20' : ''}`} />
+              <item.icon className={`w-5 h-5 ${direction === 'rtl' ? 'ml-3' : 'mr-3'} ${activeTab === item.id ? 'fill-current opacity-20' : ''}`} />
               <span>{item.label}</span>
             </button>
           ))}
         </div>
         <div className="p-4 border-t border-gray-100 text-center text-xs text-gray-400">
-          نسخه ۲.۰ (DoctorYar)
+           v2.0
         </div>
       </div>
 
@@ -662,6 +714,7 @@ const PatientHistoryModal = ({
   onClose: () => void,
   onReprint: (data: { patient: Patient, prescription: Prescription }) => void
 }) => {
+  const { t } = useLanguage();
   const [history, setHistory] = useState<Prescription[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -684,7 +737,7 @@ const PatientHistoryModal = ({
         <div className="p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50 rounded-t-2xl">
           <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2">
             <History className="w-5 h-5 text-medical-700" />
-            سوابق بیمار: {patient.fullName}
+            {t('visit_history')}: {patient.fullName}
           </h3>
           <button onClick={onClose} className="p-2 hover:bg-gray-200 rounded-full transition-colors">
             <X className="w-5 h-5 text-gray-500" />
@@ -693,9 +746,9 @@ const PatientHistoryModal = ({
 
         <div className="flex-1 overflow-y-auto p-6 bg-gray-50">
           {loading ? (
-             <div className="text-center py-10">در حال بارگذاری...</div>
+             <div className="text-center py-10">...</div>
           ) : history.length === 0 ? (
-             <div className="text-center py-10 text-gray-400">هیچ سابقه‌ای یافت نشد.</div>
+             <div className="text-center py-10 text-gray-400">---</div>
           ) : (
             <div className="space-y-6">
                {history.map((record) => (
@@ -715,12 +768,12 @@ const PatientHistoryModal = ({
                       </div>
                     </div>
 
-                    <h4 className="font-bold text-gray-800 mb-2 mt-2">تشخیص: {record.diagnosis || '---'}</h4>
+                    <h4 className="font-bold text-gray-800 mb-2 mt-2">{t('visit_diagnosis')}: {record.diagnosis || '---'}</h4>
                     
                     <div className="flex gap-4 text-xs text-gray-500 mb-4 bg-gray-50 p-2 rounded-lg inline-flex">
                        {record.vitalSigns.bp && <span>BP: {record.vitalSigns.bp}</span>}
                        {record.vitalSigns.rr && <span>RR: {record.vitalSigns.rr}</span>}
-                       {record.vitalSigns.weight && <span>وزن: {record.vitalSigns.weight}</span>}
+                       {record.vitalSigns.weight && <span>{t('visit_weight')}: {record.vitalSigns.weight}</span>}
                     </div>
 
                     <div className="space-y-1">
@@ -916,6 +969,7 @@ const PatientsView = ({
   onSelect?: (p: Patient) => void,
   onHistory: (p: Patient) => void
 }) => {
+  const { t } = useLanguage();
   const [patients, setPatients] = useState<Patient[]>([]);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
@@ -956,16 +1010,16 @@ const PatientsView = ({
     <div className="p-4 md:p-8 pb-24 md:pb-8 max-w-5xl mx-auto">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
         <div>
-          <h1 className="text-2xl font-bold text-gray-800">مدیریت بیماران</h1>
-          <p className="text-gray-500 text-sm mt-1">لیست تمام پرونده‌های تشکیل شده</p>
+          <h1 className="text-2xl font-bold text-gray-800">{t('patients_title')}</h1>
+          <p className="text-gray-500 text-sm mt-1">{t('patients_subtitle')}</p>
         </div>
         
         <div className="w-full md:w-auto relative">
-          <Search className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5" />
+          <Search className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5 rtl:right-3 ltr:left-3" />
           <input
             type="text"
-            placeholder="جستجوی نام بیمار..."
-            className="w-full md:w-80 pl-4 pr-10 py-3 bg-white border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-medical-500 shadow-sm"
+            placeholder={t('search_patient_placeholder')}
+            className="w-full md:w-80 px-10 py-3 bg-white border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-medical-500 shadow-sm"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
@@ -981,7 +1035,7 @@ const PatientsView = ({
           {filteredPatients.length === 0 ? (
             <div className="col-span-full text-center py-20 bg-white rounded-2xl border border-dashed border-gray-300">
               <Users className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-              <p className="text-gray-500">هیچ بیماری یافت نشد</p>
+              <p className="text-gray-500">{t('patients_empty')}</p>
             </div>
           ) : (
             filteredPatients.map((patient) => (
@@ -999,7 +1053,7 @@ const PatientsView = ({
                     </div>
                     <div>
                       <h3 className="font-bold text-gray-800">{patient.fullName}</h3>
-                      <p className="text-xs text-gray-500">{patient.age} ساله | {patient.weight} کیلوگرم</p>
+                      <p className="text-xs text-gray-500">{patient.age} {t('visit_age')} | {patient.weight} {t('visit_weight_unit')}</p>
                     </div>
                   </div>
                   <div className="flex gap-1">
@@ -1009,7 +1063,7 @@ const PatientsView = ({
                         onHistory(patient);
                       }}
                       className="p-2 text-gray-400 hover:text-medical-700 hover:bg-medical-50 rounded-lg transition-colors"
-                      title="سوابق بیمار"
+                      title={t('visit_history')}
                     >
                       <History className="w-4 h-4" />
                     </button>
@@ -1019,14 +1073,14 @@ const PatientsView = ({
                         onEdit(patient);
                       }}
                       className="p-2 text-gray-400 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition-colors"
-                      title="ویرایش"
+                      title={t('edit')}
                     >
                       <Edit2 className="w-4 h-4" />
                     </button>
                     <button 
                       onClick={(e) => handleDelete(e, patient)}
                       className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                      title="حذف پرونده"
+                      title={t('delete')}
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>
@@ -1037,12 +1091,12 @@ const PatientsView = ({
                   <div className="mt-4 pt-4 border-t border-gray-50 flex gap-2">
                     {patient.medicalHistory && (
                       <span className="px-2 py-1 bg-orange-50 text-orange-700 text-[10px] rounded-md border border-orange-100">
-                         سابقه دار
+                         {t('visit_history_alert')}
                       </span>
                     )}
                     {patient.allergies && (
                       <span className="px-2 py-1 bg-red-50 text-red-700 text-[10px] rounded-md border border-red-100">
-                         حساسیت
+                         {t('visit_allergies')}
                       </span>
                     )}
                   </div>
@@ -1216,6 +1270,47 @@ const DoctorProfileSettings = () => {
   );
 };
 
+const LanguageSettings = () => {
+  const { t, language, setLanguage } = useLanguage();
+
+  return (
+    <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+      <div className="flex items-center gap-2 mb-6">
+        <Languages className="w-6 h-6 text-medical-700" />
+        <h2 className="text-lg font-bold text-gray-800">{t('lang_select_title')}</h2>
+      </div>
+      
+      <p className="text-gray-500 mb-6">{t('lang_select_desc')}</p>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <button 
+          onClick={() => setLanguage('fa')}
+          className={`p-6 rounded-2xl border-2 transition-all flex flex-col items-center gap-3 ${language === 'fa' ? 'border-medical-600 bg-medical-50' : 'border-gray-100 hover:border-medical-200 bg-gray-50'}`}
+        >
+           <span className="text-4xl">🇮🇷</span>
+           <span className="font-bold text-lg">{t('lang_fa')}</span>
+        </button>
+
+        <button 
+          onClick={() => setLanguage('en')}
+          className={`p-6 rounded-2xl border-2 transition-all flex flex-col items-center gap-3 ${language === 'en' ? 'border-medical-600 bg-medical-50' : 'border-gray-100 hover:border-medical-200 bg-gray-50'}`}
+        >
+           <span className="text-4xl">🇺🇸</span>
+           <span className="font-bold text-lg">{t('lang_en')}</span>
+        </button>
+
+        <button 
+          onClick={() => setLanguage('ps')}
+          className={`p-6 rounded-2xl border-2 transition-all flex flex-col items-center gap-3 ${language === 'ps' ? 'border-medical-600 bg-medical-50' : 'border-gray-100 hover:border-medical-200 bg-gray-50'}`}
+        >
+           <span className="text-4xl">🇦🇫</span>
+           <span className="font-bold text-lg">{t('lang_ps')}</span>
+        </button>
+      </div>
+    </div>
+  );
+};
+
 const SecuritySettings = () => {
   const { showToast } = useToast();
   const [oldPass, setOldPass] = useState('');
@@ -1302,6 +1397,7 @@ const SecuritySettings = () => {
 };
 
 const DrugsManager = () => {
+  const { t } = useLanguage();
   const { showToast } = useToast();
   const [activeSubTab, setActiveSubTab] = useState<'mylist' | 'library'>('mylist');
   
@@ -1374,8 +1470,8 @@ const DrugsManager = () => {
     <div className="p-4 md:p-8 pb-24 md:pb-8 max-w-5xl mx-auto">
       <div className="flex justify-between items-center mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-gray-800">مدیریت داروها</h1>
-          <p className="text-gray-500 text-sm mt-1">بانک اطلاعات دارویی و لیست شخصی</p>
+          <h1 className="text-2xl font-bold text-gray-800">{t('drugs_title')}</h1>
+          <p className="text-gray-500 text-sm mt-1">{t('drugs_subtitle')}</p>
         </div>
       </div>
 
@@ -1385,14 +1481,14 @@ const DrugsManager = () => {
           className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-all ${activeSubTab === 'mylist' ? 'bg-white text-medical-700 shadow-sm' : 'text-gray-500 hover:bg-gray-200'}`}
         >
           <Pill className="w-4 h-4" />
-          داروهای من (لیست دم‌دست)
+          {t('drugs_tab_my')}
         </button>
         <button 
           onClick={() => setActiveSubTab('library')}
           className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-all ${activeSubTab === 'library' ? 'bg-white text-medical-700 shadow-sm' : 'text-gray-500 hover:bg-gray-200'}`}
         >
           <Library className="w-4 h-4" />
-          کتابخانه مرجع (۳۰۰+ قلم)
+          {t('drugs_tab_lib')}
         </button>
       </div>
 
@@ -1400,10 +1496,10 @@ const DrugsManager = () => {
         <>
           <div className="flex gap-2 mb-6">
              <div className="relative flex-1">
-                <Search className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5" />
+                <Search className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5 rtl:right-3 ltr:left-3" />
                 <input 
-                  className="w-full pl-4 pr-10 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-medical-500 outline-none shadow-sm"
-                  placeholder="جستجو در داروهای من..."
+                  className="w-full px-10 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-medical-500 outline-none shadow-sm"
+                  placeholder={t('drugs_search_my')}
                   value={search}
                   onChange={e => setSearch(e.target.value)}
                 />
@@ -1413,7 +1509,7 @@ const DrugsManager = () => {
                 className="bg-medical-700 text-white hover:bg-medical-900 px-4 py-3 rounded-xl font-bold flex items-center gap-2 transition-colors shadow-lg shadow-medical-500/30 whitespace-nowrap"
               >
                 <PlusCircle className="w-5 h-5" />
-                <span className="hidden md:inline">افزودن دستی</span>
+                <span className="hidden md:inline">{t('drugs_add_manual')}</span>
               </button>
           </div>
 
@@ -1468,9 +1564,9 @@ const DrugsManager = () => {
             </div>
 
             <div className="relative">
-               <Search className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5" />
+               <Search className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5 rtl:right-3 ltr:left-3" />
                <input 
-                 className="w-full pl-4 pr-10 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-medical-500 outline-none shadow-sm"
+                 className="w-full px-10 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-medical-500 outline-none shadow-sm"
                  placeholder="جستجو در کل بانک دارویی..."
                  value={libSearch}
                  onChange={e => setLibSearch(e.target.value)}
@@ -1541,6 +1637,7 @@ const DrugsManager = () => {
 };
 
 const TemplatesManager = () => {
+  const { t } = useLanguage();
   const { showToast } = useToast();
   const [templates, setTemplates] = useState<PrescriptionTemplate[]>([]);
   const [editingTemplate, setEditingTemplate] = useState<PrescriptionTemplate | null>(null);
@@ -1685,15 +1782,15 @@ const TemplatesManager = () => {
     <div className="p-4 md:p-8 pb-24 md:pb-8 max-w-5xl mx-auto">
        <div className="flex justify-between items-center mb-8">
         <div>
-          <h1 className="text-2xl font-bold text-gray-800">نسخه‌های آماده</h1>
-          <p className="text-gray-500 text-sm mt-1">مدیریت پکیج‌های درمانی برای تجویز سریع</p>
+          <h1 className="text-2xl font-bold text-gray-800">{t('templates_title')}</h1>
+          <p className="text-gray-500 text-sm mt-1">{t('templates_subtitle')}</p>
         </div>
         <button 
           onClick={() => setEditingTemplate({ id: crypto.randomUUID(), title: '', diagnosis: '', items: [] })}
           className="bg-medical-700 text-white hover:bg-medical-900 px-6 py-3 rounded-xl font-bold flex items-center gap-2 transition-colors shadow-lg shadow-medical-500/30"
         >
           <PlusCircle className="w-5 h-5" />
-          نسخه جدید
+          {t('templates_new')}
         </button>
       </div>
 
@@ -1726,7 +1823,7 @@ const TemplatesManager = () => {
         {templates.length === 0 && (
            <div className="col-span-full text-center py-20 bg-white rounded-2xl border border-dashed border-gray-300">
              <FileText className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-             <p className="text-gray-500">هیچ الگویی تعریف نشده است.</p>
+             <p className="text-gray-500">{t('templates_empty')}</p>
            </div>
         )}
       </div>
@@ -2090,11 +2187,12 @@ const PrintLayoutDesigner = () => {
 
 // 4. Settings View Container
 const SettingsView = () => {
-  const [activeSubTab, setActiveSubTab] = useState<'profile' | 'designer' | 'backup' | 'security'>('profile');
+  const { t } = useLanguage();
+  const [activeSubTab, setActiveSubTab] = useState<'profile' | 'designer' | 'backup' | 'security' | 'language'>('profile');
 
   return (
     <div className="max-w-7xl mx-auto p-4 md:p-8 h-screen md:h-auto flex flex-col">
-      <h1 className="text-2xl font-bold text-gray-800 mb-6">تنظیمات و مدیریت</h1>
+      <h1 className="text-2xl font-bold text-gray-800 mb-6">{t('settings_title')}</h1>
       
       <div className="flex gap-2 mb-6 overflow-x-auto pb-2 no-scrollbar">
         <button 
@@ -2102,28 +2200,35 @@ const SettingsView = () => {
           className={`px-4 py-2 rounded-xl whitespace-nowrap transition-colors flex items-center gap-2 ${activeSubTab === 'profile' ? 'bg-gray-800 text-white' : 'bg-white text-gray-600 hover:bg-gray-100'}`}
         >
           <UserCog className="w-4 h-4"/>
-          اطلاعات مطب
+          {t('settings_tab_profile')}
         </button>
         <button 
           onClick={() => setActiveSubTab('designer')}
           className={`px-4 py-2 rounded-xl whitespace-nowrap transition-colors flex items-center gap-2 ${activeSubTab === 'designer' ? 'bg-gray-800 text-white' : 'bg-white text-gray-600 hover:bg-gray-100'}`}
         >
           <LayoutTemplate className="w-4 h-4"/>
-          طراحی نسخه (سربرگ)
+          {t('settings_tab_design')}
         </button>
         <button 
           onClick={() => setActiveSubTab('backup')}
           className={`px-4 py-2 rounded-xl whitespace-nowrap transition-colors flex items-center gap-2 ${activeSubTab === 'backup' ? 'bg-gray-800 text-white' : 'bg-white text-gray-600 hover:bg-gray-100'}`}
         >
           <RefreshCw className="w-4 h-4"/>
-          مدیریت داده‌ها
+          {t('settings_tab_data')}
         </button>
         <button 
           onClick={() => setActiveSubTab('security')}
           className={`px-4 py-2 rounded-xl whitespace-nowrap transition-colors flex items-center gap-2 ${activeSubTab === 'security' ? 'bg-gray-800 text-white' : 'bg-white text-gray-600 hover:bg-gray-100'}`}
         >
           <ShieldCheck className="w-4 h-4"/>
-          امنیت
+          {t('settings_tab_security')}
+        </button>
+        <button 
+          onClick={() => setActiveSubTab('language')}
+          className={`px-4 py-2 rounded-xl whitespace-nowrap transition-colors flex items-center gap-2 ${activeSubTab === 'language' ? 'bg-gray-800 text-white' : 'bg-white text-gray-600 hover:bg-gray-100'}`}
+        >
+          <Globe className="w-4 h-4"/>
+          {t('settings_tab_language')}
         </button>
       </div>
 
@@ -2132,6 +2237,7 @@ const SettingsView = () => {
         {activeSubTab === 'designer' && <PrintLayoutDesigner />}
         {activeSubTab === 'backup' && <BackupManager />}
         {activeSubTab === 'security' && <SecuritySettings />}
+        {activeSubTab === 'language' && <LanguageSettings />}
       </div>
     </div>
   );
@@ -2151,6 +2257,7 @@ const Workbench = ({
   onPrint: (data: { patient: Patient, prescription: Prescription }) => void,
   onAddPatient: () => void
 }) => {
+  const { t } = useLanguage();
   const { showToast } = useToast();
   const [search, setSearch] = useState('');
   const [results, setResults] = useState<Patient[]>([]);
@@ -2162,6 +2269,11 @@ const Workbench = ({
   const [templates, setTemplates] = useState<PrescriptionTemplate[]>([]);
   const [showTemplates, setShowTemplates] = useState(false);
   const [drugs, setDrugs] = useState<Drug[]>([]);
+
+  // State for Custom Template Modal
+  const [showSaveTemplateModal, setShowSaveTemplateModal] = useState(false);
+  const [templateTitle, setTemplateTitle] = useState('');
+
 
   // Search Logic
   useEffect(() => {
@@ -2230,6 +2342,69 @@ const Workbench = ({
     setItems(newItems);
   };
 
+  // Replaces window.prompt to avoid 'Ignored call to prompt()' error
+  const handleSaveAsTemplate = () => {
+    if (items.length === 0) {
+      showToast('لیست داروها خالی است', 'error');
+      return;
+    }
+    setTemplateTitle(diagnosis || 'نسخه جدید');
+    setShowSaveTemplateModal(true);
+  };
+
+  const confirmSaveTemplate = async () => {
+    if (!templateTitle) return;
+    
+    const newTemplate: PrescriptionTemplate = {
+      id: crypto.randomUUID(),
+      title: templateTitle,
+      diagnosis: diagnosis,
+      items: items.map(i => ({
+          id: crypto.randomUUID(), // New IDs for template items
+          drugName: i.drugName,
+          dosage: i.dosage,
+          instruction: i.instruction
+      }))
+    };
+    
+    await dbParams.addTemplate(newTemplate);
+    
+    // Refresh templates
+    const updatedTemplates = await dbParams.getAllTemplates();
+    setTemplates(updatedTemplates);
+    
+    // Sync
+    syncTelemetry();
+    
+    setShowSaveTemplateModal(false);
+    showToast('به لیست نسخه‌های آماده اضافه شد', 'success');
+  };
+
+  const handleAddToBank = async (item: PrescriptionItem) => {
+    if (!item.drugName) return;
+    
+    // Check duplication
+    const exists = drugs.some(d => d.name.trim().toLowerCase() === item.drugName.trim().toLowerCase());
+    if (exists) {
+        showToast('این دارو قبلاً در بانک دارویی موجود است', 'error');
+        return;
+    }
+    
+    const newDrug: Drug = {
+        id: crypto.randomUUID(),
+        name: item.drugName,
+        defaultInstruction: item.instruction
+    };
+    
+    await dbParams.addDrug(newDrug);
+    
+    // Refresh drugs
+    const updatedDrugs = await dbParams.getAllDrugs();
+    setDrugs(updatedDrugs);
+    
+    showToast('دارو به بانک اطلاعاتی اضافه شد', 'success');
+  };
+
   const handleSave = async (print: boolean) => {
     if (!activePatient) return;
 
@@ -2262,7 +2437,7 @@ const Workbench = ({
     if (print) {
       onPrint({ patient: activePatient, prescription });
     } else {
-      showToast('نسخه با موفقیت ذخیره شد', 'success');
+      showToast(t('toast_saved'), 'success');
       onCloseVisit();
     }
   };
@@ -2272,16 +2447,16 @@ const Workbench = ({
       <div className="flex flex-col items-center justify-center h-[80vh] max-w-2xl mx-auto px-4">
         <div className="bg-white p-8 rounded-3xl shadow-lg border border-gray-100 w-full text-center">
           <Stethoscope className="w-20 h-20 text-medical-500 mx-auto mb-6 bg-medical-50 p-4 rounded-full" />
-          <h2 className="text-3xl font-bold text-gray-800 mb-2">خوش آمدید، دکتر</h2>
-          <p className="text-gray-500 mb-8">برای شروع ویزیت، نام بیمار را جستجو کنید</p>
+          <h2 className="text-3xl font-bold text-gray-800 mb-2">{t('dashboard_welcome')}</h2>
+          <p className="text-gray-500 mb-8">{t('dashboard_subtitle')}</p>
           
           <div className="flex gap-3 w-full">
             <div className="relative flex-1">
-              <Search className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 w-6 h-6" />
+              <Search className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 w-6 h-6 rtl:right-4 ltr:left-4" />
               <input 
                 autoFocus
-                className="w-full p-4 pl-12 pr-12 text-lg border border-gray-200 rounded-2xl focus:ring-4 focus:ring-medical-100 focus:border-medical-500 outline-none transition-all shadow-inner"
-                placeholder="جستجوی نام بیمار..."
+                className="w-full p-4 px-12 text-lg border border-gray-200 rounded-2xl focus:ring-4 focus:ring-medical-100 focus:border-medical-500 outline-none transition-all shadow-inner"
+                placeholder={t('search_patient_placeholder')}
                 value={search}
                 onChange={e => setSearch(e.target.value)}
               />
@@ -2294,7 +2469,7 @@ const Workbench = ({
                       className="w-full text-right p-4 hover:bg-medical-50 border-b border-gray-50 last:border-0 transition-colors flex justify-between"
                     >
                       <span className="font-bold text-gray-800">{p.fullName}</span>
-                      <span className="text-sm text-gray-500">{p.age} ساله</span>
+                      <span className="text-sm text-gray-500">{p.age} {t('visit_age')}</span>
                     </button>
                   ))}
                 </div>
@@ -2304,7 +2479,7 @@ const Workbench = ({
             <button 
               onClick={onAddPatient}
               className="bg-medical-700 hover:bg-medical-900 text-white p-4 rounded-2xl transition-colors shadow-lg shadow-medical-500/30 flex items-center justify-center min-w-[60px]"
-              title="ثبت بیمار جدید"
+              title={t('new_patient_btn')}
             >
               <UserPlus className="w-7 h-7" />
             </button>
@@ -2328,9 +2503,9 @@ const Workbench = ({
             <div>
               <h2 className="text-xl font-bold text-gray-800">{activePatient.fullName}</h2>
               <div className="flex gap-3 text-sm text-gray-500">
-                <span>{activePatient.age} ساله</span>
+                <span>{activePatient.age} {t('visit_age')}</span>
                 <span>•</span>
-                <span>وزن: {activePatient.weight} kg</span>
+                <span>{t('visit_weight')}: {activePatient.weight} kg</span>
               </div>
             </div>
           </div>
@@ -2342,14 +2517,14 @@ const Workbench = ({
                 className="flex items-center gap-2 px-4 py-2 bg-cream-200 text-gray-700 rounded-xl font-medium hover:bg-cream-300 transition-colors"
               >
                 <FileText className="w-4 h-4" />
-                نسخه‌های آماده
+                {t('nav_templates')}
                 <ChevronDown className="w-4 h-4" />
               </button>
               
               {showTemplates && (
                 <div className="absolute left-0 top-full mt-2 w-64 bg-white rounded-xl shadow-xl border border-gray-100 z-50 p-2">
                   {templates.length === 0 ? (
-                    <p className="text-center text-sm text-gray-400 p-2">الگویی یافت نشد</p>
+                    <p className="text-center text-sm text-gray-400 p-2">{t('templates_empty')}</p>
                   ) : (
                     templates.map(t => (
                       <button 
@@ -2375,7 +2550,7 @@ const Workbench = ({
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div className="lg:col-span-2 space-y-4">
               <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm">
-                <label className="text-sm font-bold text-gray-700 mb-2 block">تشخیص (Diagnosis)</label>
+                <label className="text-sm font-bold text-gray-700 mb-2 block">{t('visit_diagnosis')}</label>
                 <input 
                   className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-medical-500 outline-none"
                   placeholder="مثال: Acute Bronchitis"
@@ -2389,10 +2564,10 @@ const Workbench = ({
                 <div className="p-4 bg-gray-50 border-b border-gray-200 flex justify-between items-center">
                   <h3 className="font-bold text-gray-700 flex items-center gap-2">
                     <Pill className="w-5 h-5 text-medical-700" />
-                    اقلام دارویی
+                    {t('visit_rx_items')}
                   </h3>
                   <button onClick={addItem} className="text-sm text-medical-700 font-bold hover:underline flex items-center gap-1">
-                    <Plus className="w-4 h-4" /> افزودن
+                    <Plus className="w-4 h-4" /> {t('visit_add_item')}
                   </button>
                 </div>
                 
@@ -2404,7 +2579,7 @@ const Workbench = ({
                         <div className="md:col-span-5">
                           <input 
                             className="w-full p-2 bg-transparent border-b border-transparent focus:border-medical-500 outline-none font-medium"
-                            placeholder="نام دارو"
+                            placeholder={t('visit_drug_name')}
                             value={item.drugName}
                             onChange={e => updateItem(item.id, 'drugName', e.target.value)}
                             list="drug-suggestions"
@@ -2413,7 +2588,7 @@ const Workbench = ({
                         <div className="md:col-span-2">
                           <input 
                             className="w-full p-2 bg-transparent border-b border-transparent focus:border-medical-500 outline-none text-sm"
-                            placeholder="دوز/تعداد"
+                            placeholder={t('visit_dosage')}
                             value={item.dosage}
                             onChange={e => updateItem(item.id, 'dosage', e.target.value)}
                           />
@@ -2421,15 +2596,20 @@ const Workbench = ({
                         <div className="md:col-span-5">
                           <input 
                             className="w-full p-2 bg-transparent border-b border-transparent focus:border-medical-500 outline-none text-sm"
-                            placeholder="دستور مصرف"
+                            placeholder={t('visit_instruction')}
                             value={item.instruction}
                             onChange={e => updateItem(item.id, 'instruction', e.target.value)}
                           />
                         </div>
                       </div>
-                      <button onClick={() => removeItem(item.id)} className="p-2 text-gray-300 hover:text-red-500 transition-colors">
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                      <div className="flex gap-1">
+                        <button onClick={() => handleAddToBank(item)} className="p-2 text-blue-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="افزودن به بانک دارویی">
+                          <Save className="w-4 h-4" />
+                        </button>
+                        <button onClick={() => removeItem(item.id)} className="p-2 text-gray-300 hover:text-red-500 transition-colors">
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
                     </div>
                   ))}
                   {items.length === 0 && (
@@ -2441,7 +2621,7 @@ const Workbench = ({
                 {items.length > 0 && (
                    <div className="p-2 bg-gray-50 border-t border-gray-200">
                      <button onClick={addItem} className="w-full py-2 border border-dashed border-gray-300 rounded-lg text-gray-500 hover:bg-white transition-colors text-sm">
-                       + سطر جدید
+                       {t('visit_row_new')}
                      </button>
                    </div>
                 )}
@@ -2453,11 +2633,11 @@ const Workbench = ({
               <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm">
                 <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2">
                   <Activity className="w-5 h-5 text-medical-700" />
-                  علائم حیاتی
+                  {t('visit_vitals')}
                 </h3>
                 <div className="space-y-3">
                   <div className="flex justify-between items-center">
-                    <label className="text-sm text-gray-500">فشار خون (BP)</label>
+                    <label className="text-sm text-gray-500">{t('visit_bp')}</label>
                     <input 
                       className="w-20 p-1 border-b border-gray-200 text-center focus:border-medical-500 outline-none" 
                       placeholder="120/80"
@@ -2466,7 +2646,7 @@ const Workbench = ({
                     />
                   </div>
                   <div className="flex justify-between items-center">
-                    <label className="text-sm text-gray-500">ضربان (PR)</label>
+                    <label className="text-sm text-gray-500">{t('visit_pr')}</label>
                     <input 
                       className="w-20 p-1 border-b border-gray-200 text-center focus:border-medical-500 outline-none" 
                       placeholder="72"
@@ -2475,7 +2655,7 @@ const Workbench = ({
                     />
                   </div>
                   <div className="flex justify-between items-center">
-                    <label className="text-sm text-gray-500">تنفس (RR)</label>
+                    <label className="text-sm text-gray-500">{t('visit_rr')}</label>
                     <input 
                       className="w-20 p-1 border-b border-gray-200 text-center focus:border-medical-500 outline-none" 
                       placeholder="18"
@@ -2484,7 +2664,7 @@ const Workbench = ({
                     />
                   </div>
                   <div className="flex justify-between items-center">
-                    <label className="text-sm text-gray-500">دما (Temp)</label>
+                    <label className="text-sm text-gray-500">{t('visit_temp')}</label>
                     <input 
                       className="w-20 p-1 border-b border-gray-200 text-center focus:border-medical-500 outline-none" 
                       placeholder="36.5"
@@ -2493,7 +2673,7 @@ const Workbench = ({
                     />
                   </div>
                   <div className="flex justify-between items-center pt-2 border-t border-dashed border-gray-200">
-                    <label className="text-sm font-bold text-gray-700">وزن فعلی (kg)</label>
+                    <label className="text-sm font-bold text-gray-700">{t('visit_weight')}</label>
                     <input 
                       className="w-20 p-1 bg-yellow-50 border-b border-yellow-200 text-center font-bold text-gray-800 focus:border-medical-500 outline-none rounded" 
                       value={vitalSigns.weight || ''}
@@ -2507,17 +2687,17 @@ const Workbench = ({
                 <div className="bg-red-50 p-5 rounded-2xl border border-red-100">
                   <h3 className="font-bold text-red-800 mb-2 text-sm flex items-center gap-2">
                     <AlertCircle className="w-4 h-4" />
-                    هشدارهای پرونده
+                    {t('visit_history_alert')}
                   </h3>
                   {activePatient.allergies && (
                     <div className="mb-2">
-                      <span className="text-xs font-bold text-red-700 block mb-1">حساسیت‌ها:</span>
+                      <span className="text-xs font-bold text-red-700 block mb-1">{t('visit_allergies')}:</span>
                       <p className="text-sm text-red-600 leading-relaxed">{activePatient.allergies}</p>
                     </div>
                   )}
                   {activePatient.medicalHistory && (
                     <div>
-                      <span className="text-xs font-bold text-red-700 block mb-1">سوابق:</span>
+                      <span className="text-xs font-bold text-red-700 block mb-1">{t('visit_history')}:</span>
                       <p className="text-sm text-red-600 leading-relaxed">{activePatient.medicalHistory}</p>
                     </div>
                   )}
@@ -2528,21 +2708,71 @@ const Workbench = ({
         </div>
 
         {/* Footer Actions */}
-        <div className="p-4 bg-white border-t border-gray-200 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] flex justify-between items-center pb-safe">
+        <div className="p-4 bg-white border-t border-gray-200 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] flex flex-wrap gap-4 justify-between items-center pb-safe">
            <button 
-             onClick={() => handleSave(false)}
-             className="px-6 py-3 text-gray-600 font-bold hover:bg-gray-100 rounded-xl transition-colors"
+             onClick={handleSaveAsTemplate}
+             className="px-4 py-3 border border-blue-200 text-blue-700 font-bold hover:bg-blue-50 rounded-xl transition-colors flex items-center gap-2"
            >
-             ذخیره بدون چاپ
+              <Save className="w-5 h-5" />
+              <span className="hidden md:inline">{t('visit_save_template')}</span>
+              <span className="md:hidden">الگو</span>
            </button>
-           <button 
-             onClick={() => handleSave(true)}
-             className="px-8 py-3 bg-medical-700 text-white font-bold rounded-xl hover:bg-medical-900 transition-shadow shadow-lg shadow-medical-500/30 flex items-center gap-2"
-           >
-             <Printer className="w-5 h-5" />
-             ذخیره و چاپ نسخه
-           </button>
+
+           <div className="flex gap-2">
+             <button 
+               onClick={() => handleSave(false)}
+               className="px-6 py-3 text-gray-600 font-bold hover:bg-gray-100 rounded-xl transition-colors"
+             >
+               {t('visit_save_no_print')}
+             </button>
+             <button 
+               onClick={() => handleSave(true)}
+               className="px-8 py-3 bg-medical-700 text-white font-bold rounded-xl hover:bg-medical-900 transition-shadow shadow-lg shadow-medical-500/30 flex items-center gap-2"
+             >
+               <Printer className="w-5 h-5" />
+               {t('visit_save_print')}
+             </button>
+           </div>
         </div>
+
+        {/* Save Template Modal Overlay */}
+        {showSaveTemplateModal && (
+          <div className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center p-4">
+             <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-2xl animate-in fade-in zoom-in duration-200">
+               <h3 className="font-bold text-lg text-gray-800 mb-4 flex items-center gap-2">
+                 <FileText className="w-5 h-5 text-medical-700" />
+                 {t('visit_save_template')}
+               </h3>
+               
+               <label className="block text-sm font-medium text-gray-700 mb-2">عنوان الگو</label>
+               <input 
+                 autoFocus
+                 className="w-full p-3 border border-gray-200 rounded-xl mb-6 focus:ring-2 focus:ring-medical-500 outline-none"
+                 placeholder="مثال: سرماخوردگی"
+                 value={templateTitle}
+                 onChange={e => setTemplateTitle(e.target.value)}
+                 onKeyDown={(e) => {
+                   if (e.key === 'Enter') confirmSaveTemplate();
+                 }}
+               />
+               
+               <div className="flex gap-3">
+                 <button 
+                   onClick={() => setShowSaveTemplateModal(false)}
+                   className="flex-1 py-3 border border-gray-200 text-gray-600 font-bold rounded-xl hover:bg-gray-50 transition-colors"
+                 >
+                   {t('cancel')}
+                 </button>
+                 <button 
+                   onClick={confirmSaveTemplate}
+                   className="flex-1 py-3 bg-medical-700 text-white font-bold rounded-xl hover:bg-medical-900 transition-colors"
+                 >
+                   {t('save')}
+                 </button>
+               </div>
+             </div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -2552,6 +2782,7 @@ const Workbench = ({
 // 5. Main App Container
 function MainApp() {
   const { showToast } = useToast();
+  const { t } = useLanguage();
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [activeTab, setActiveTab] = useState('dashboard');
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -2749,7 +2980,7 @@ function MainApp() {
             >
               <Plus className="w-6 h-6" />
               <span className="max-w-0 overflow-hidden group-hover:max-w-xs transition-all duration-300 whitespace-nowrap">
-                بیمار جدید
+                {t('new_patient_btn')}
               </span>
             </button>
           </div>
@@ -2829,9 +3060,11 @@ function MainApp() {
 export default function App() {
   return (
     <ErrorBoundary>
-      <ToastProvider>
-        <MainApp />
-      </ToastProvider>
+      <LanguageProvider>
+        <ToastProvider>
+          <MainApp />
+        </ToastProvider>
+      </LanguageProvider>
     </ErrorBoundary>
   );
 }
