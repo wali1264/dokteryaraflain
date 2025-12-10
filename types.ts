@@ -15,6 +15,7 @@ export interface Patient {
 export interface Drug {
   id: string;
   name: string;
+  tradeName?: string; // Added optional Trade Name (Brand)
   defaultInstruction?: string;
 }
 

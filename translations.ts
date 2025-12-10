@@ -54,6 +54,10 @@ export const translations = {
     drugs_tab_lib: 'کتابخانه مرجع',
     drugs_search_my: 'جستجو در داروهای من...',
     drugs_add_manual: 'افزودن دستی',
+    drug_trade_name: 'نام تجاری (برند)',
+    drug_generic_name: 'نام ژنریک (علمی)',
+    search_mode_generic: 'جستجو: ژنریک',
+    search_mode_trade: 'جستجو: برند',
     
     templates_title: 'نسخه‌های آماده',
     templates_subtitle: 'مدیریت پکیج‌های درمانی برای تجویز سریع',
@@ -135,6 +139,10 @@ export const translations = {
     drugs_tab_lib: 'Reference Lib',
     drugs_search_my: 'Search my drugs...',
     drugs_add_manual: 'Add Manual',
+    drug_trade_name: 'Trade Name (Brand)',
+    drug_generic_name: 'Generic Name',
+    search_mode_generic: 'Search: Generic',
+    search_mode_trade: 'Search: Brand',
     
     templates_title: 'Prescription Templates',
     templates_subtitle: 'Manage ready-made packages for quick prescribing',
@@ -216,6 +224,10 @@ export const translations = {
     drugs_tab_lib: 'مرجع کتابتون',
     drugs_search_my: 'زما په درملو کې لټون...',
     drugs_add_manual: 'په لاسي ډول زیاتول',
+    drug_trade_name: 'تجارتی نوم (برانډ)',
+    drug_generic_name: 'ژنریک نوم (علمي)',
+    search_mode_generic: 'لټون: ژنریک',
+    search_mode_trade: 'لټون: برانډ',
     
     templates_title: 'چمتو نسخې',
     templates_subtitle: 'د ګړندي نسخې لپاره د درملنې کڅوړې مدیریت',
