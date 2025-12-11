@@ -47,7 +47,8 @@ import {
   Languages,
   ToggleLeft,
   ToggleRight,
-  Factory
+  Factory,
+  Monitor
 } from 'lucide-react';
 import { dbParams, backupSystem } from './db';
 import { Patient, Drug, PrescriptionTemplate, DoctorProfile, PrescriptionItem, VitalSigns, Prescription, PrintLayout, PrintElement } from './types';
@@ -74,12 +75,49 @@ const DEFAULT_PRINT_ELEMENTS: { [key: string]: PrintElement } = {
   rxItems: { id: 'rxItems', label: 'اقلام دارویی', x: 10, y: 90, visible: true, width: 130, fontSize: 12, rotation: 0 },
 };
 
+// --- THEME CONTEXT ---
+interface ThemeContextType {
+  isHighContrast: boolean;
+  toggleHighContrast: () => void;
+}
+
+const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
+
+const useTheme = () => {
+  const context = useContext(ThemeContext);
+  if (!context) throw new Error('useTheme must be used within a ThemeProvider');
+  return context;
+};
+
+const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const [isHighContrast, setIsHighContrast] = useState(false);
+
+  useEffect(() => {
+    const saved = localStorage.getItem('app_high_contrast') === 'true';
+    setIsHighContrast(saved);
+  }, []);
+
+  const toggleHighContrast = () => {
+    setIsHighContrast(prev => {
+      const newValue = !prev;
+      localStorage.setItem('app_high_contrast', String(newValue));
+      return newValue;
+    });
+  };
+
+  return (
+    <ThemeContext.Provider value={{ isHighContrast, toggleHighContrast }}>
+      {children}
+    </ThemeContext.Provider>
+  );
+};
+
 // --- LANGUAGE CONTEXT ---
 interface LanguageContextType {
   language: Language;
   direction: Direction;
   setLanguage: (lang: Language) => void;
-  t: (key: keyof typeof translations['fa']) => string;
+  t: (key: keyof typeof translations['fa'], params?: Record<string, string>) => string;
 }
 
 const LanguageContext = createContext<LanguageContextType | undefined>(undefined);
@@ -111,8 +149,14 @@ const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({ children })
     localStorage.setItem('app_language', language);
   }, [language]);
 
-  const t = (key: keyof typeof translations['fa']): string => {
-    return translations[language][key] || translations['fa'][key] || key;
+  const t = (key: keyof typeof translations['fa'], params?: Record<string, string>): string => {
+    let text = translations[language][key] || translations['fa'][key] || key;
+    if (params) {
+      Object.entries(params).forEach(([k, v]) => {
+        text = text.replace(`{${k}}`, v);
+      });
+    }
+    return text;
   };
 
   return (
@@ -192,7 +236,7 @@ const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ children }) =>
 
 const LoginScreen = ({ onLogin }: { onLogin: () => void }) => {
   const { showToast } = useToast();
-  const { t } = useLanguage();
+  const { t, direction } = useLanguage();
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -204,12 +248,12 @@ const LoginScreen = ({ onLogin }: { onLogin: () => void }) => {
       if (isValid) {
         onLogin();
       } else {
-        showToast('رمز عبور نادرست است', 'error');
+        showToast(t('login_error_pass'), 'error');
         setPassword('');
       }
     } catch (err) {
       console.error(err);
-      showToast('خطا در برقراری ارتباط با پایگاه داده', 'error');
+      showToast(t('login_error_db'), 'error');
     } finally {
       setLoading(false);
     }
@@ -226,7 +270,7 @@ const LoginScreen = ({ onLogin }: { onLogin: () => void }) => {
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="relative">
-             <Lock className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5 rtl:right-4 ltr:left-4" />
+             <Lock className={`absolute top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5 ${direction === 'rtl' ? 'right-4' : 'left-4'}`} />
              <input 
                type="password"
                autoFocus
@@ -307,7 +351,7 @@ const PrescriptionPaper = ({
             width: el.width ? `${el.width}mm` : 'auto',
             fontSize: `${el.fontSize}pt`,
             whiteSpace: key === 'rxItems' ? 'normal' : 'nowrap',
-            direction: 'rtl',
+            direction: 'rtl', // Prescriptions usually right-to-left in region, mostly static
             textAlign: 'right',
             transform: `rotate(${el.rotation || 0}deg)`,
             transformOrigin: 'center center',
@@ -536,6 +580,7 @@ const PrintPreviewModal = ({
   referenceDrugs?: Drug[]
 }) => {
   const [showBackground, setShowBackground] = useState(false);
+  const { t } = useLanguage();
 
   // Sync internal state with passed prop on open
   useEffect(() => {
@@ -554,7 +599,7 @@ const PrintPreviewModal = ({
         <div className="p-4 bg-white border-b border-gray-200 flex justify-between items-center">
           <h3 className="font-bold text-lg text-gray-800 flex items-center gap-2">
             <Printer className="w-5 h-5 text-medical-700" />
-            پیش‌نمایش چاپ
+            {t('print_preview_title')}
           </h3>
           <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-full transition-colors">
             <X className="w-6 h-6 text-gray-500" />
@@ -565,12 +610,12 @@ const PrintPreviewModal = ({
            {/* Controls Sidebar */}
            <div className="w-64 bg-white border-l border-gray-200 p-4 flex flex-col gap-6 overflow-y-auto">
               <div>
-                 <h4 className="font-bold text-gray-700 mb-3 text-sm">تنظیمات چاپ</h4>
+                 <h4 className="font-bold text-gray-700 mb-3 text-sm">{t('settings_tab_design')}</h4>
                  
                  {hasCustomLayout ? (
                    <div className="space-y-3">
                       <div className="p-3 bg-blue-50 rounded-lg text-xs text-blue-800 border border-blue-100">
-                         چیدمان سفارشی فعال است.
+                         {t('print_custom_active')}
                       </div>
                       
                       {data.doctor.printLayout?.backgroundImage && (
@@ -582,16 +627,12 @@ const PrintPreviewModal = ({
                               onChange={e => setShowBackground(e.target.checked)}
                               className="w-4 h-4 rounded text-medical-600 focus:ring-medical-500"
                             />
-                            <span className="text-sm">چاپ تصویر پس‌زمینه (سربرگ)</span>
+                            <span className="text-sm">{t('print_opt_bg')}</span>
                           </label>
                           
                           {showBackground && (
                             <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg text-xs text-yellow-800 leading-relaxed">
-                              <strong>نکته مهم:</strong>
-                              <br/>
-                              اگر در چاپ نهایی تصویر دیده نشد، لطفا در پنجره چاپ مرورگر گزینه 
-                              <span className="font-bold mx-1" dir="ltr">Background graphics</span>
-                              را تیک بزنید.
+                              {t('print_bg_warning')}
                             </div>
                           )}
                         </div>
@@ -599,19 +640,13 @@ const PrintPreviewModal = ({
 
                       {printSettings.showTradeNames && (
                          <div className="p-3 bg-purple-50 rounded-lg text-xs text-purple-800 border border-purple-100 mt-2">
-                            نام تجاری داروها در چاپ درج خواهد شد.
+                            {t('print_opt_trade')}
                          </div>
                       )}
-                      
-                      <p className="text-xs text-gray-400 mt-2">
-                         * اگر از کاغذ سفید استفاده می‌کنید، تیک "چاپ تصویر" را بزنید.
-                         <br/>
-                         * اگر کاغذ سربرگ‌دار دارید، تیک را بردارید.
-                      </p>
                    </div>
                  ) : (
                    <div className="p-3 bg-gray-50 rounded-lg text-xs text-gray-600">
-                      چیدمان استاندارد (Royal Style) استفاده می‌شود. برای تغییر محل فیلدها، به بخش تنظیمات &gt; طراحی نسخه بروید.
+                      {t('print_standard_active')}
                    </div>
                  )}
               </div>
@@ -641,14 +676,14 @@ const PrintPreviewModal = ({
                onClick={onClose}
                className="px-6 py-3 border border-gray-300 text-gray-700 font-bold rounded-xl hover:bg-gray-50 transition-colors"
              >
-               انصراف
+               {t('cancel')}
              </button>
              <button 
                onClick={() => onConfirmPrint({ showBackground })}
                className="px-8 py-3 bg-medical-700 text-white font-bold rounded-xl hover:bg-medical-900 shadow-lg shadow-medical-500/30 flex items-center gap-2"
              >
                <Printer className="w-5 h-5" />
-               تایید و چاپ
+               {t('print_confirm_btn')}
              </button>
         </div>
       </div>
@@ -720,11 +755,6 @@ const Navigation = ({ activeTab, onTabChange, onSecretClick }: { activeTab: stri
   );
 };
 
-// ... [History Modal, PatientModal, PatientsView, Settings components remain mostly unchanged but re-included for completeness if modified] ...
-// Assuming they are stable, I will condense or include them as necessary. 
-// For this response, I'll include the parts that might interact with drugs/layout or are required for compilation context.
-// ... (Including PatientHistoryModal, PatientModal, PatientsView as is for stability)
-
 const PatientHistoryModal = ({ patient, isOpen, onClose, onReprint }: { patient: Patient | null, isOpen: boolean, onClose: () => void, onReprint: (data: { patient: Patient, prescription: Prescription }) => void }) => {
   const { t } = useLanguage();
   const [history, setHistory] = useState<Prescription[]>([]);
@@ -769,7 +799,7 @@ const PatientHistoryModal = ({ patient, isOpen, onClose, onReprint }: { patient:
                       <button
                         onClick={() => patient && onReprint({ patient, prescription: record })}
                         className="p-2 bg-gray-50 text-gray-400 hover:text-medical-700 hover:bg-medical-50 rounded-lg transition-colors border border-gray-100"
-                        title="چاپ مجدد نسخه"
+                        title={t('print')}
                       >
                         <Printer className="w-4 h-4" />
                       </button>
@@ -806,6 +836,8 @@ const PatientHistoryModal = ({ patient, isOpen, onClose, onReprint }: { patient:
 };
 
 const PatientModal = ({ isOpen, onClose, onSave, initialData }: { isOpen: boolean; onClose: () => void; onSave: (p: Patient) => void; initialData?: Patient | null; }) => {
+  const { t } = useLanguage();
+  const { isHighContrast } = useTheme();
   const [formData, setFormData] = useState<Partial<Patient>>({ fullName: '', age: '' as any, gender: 'male', weight: '' as any, medicalHistory: '', allergies: '' });
 
   useEffect(() => {
@@ -835,28 +867,32 @@ const PatientModal = ({ isOpen, onClose, onSave, initialData }: { isOpen: boolea
     onSave(patient);
   };
 
+  const inputClass = isHighContrast 
+    ? "w-full p-3 border-2 border-gray-600 rounded-xl outline-none focus:border-black bg-white shadow-sm font-medium text-gray-900" 
+    : "w-full p-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-medical-500 focus:border-transparent outline-none transition-all";
+
   return (
     <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4 no-print">
       <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl flex flex-col max-h-[90vh]">
         <div className="p-4 border-b border-gray-100 flex justify-between items-center bg-cream-50 rounded-t-2xl">
           <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2">
             <User className="w-5 h-5 text-medical-700" />
-            {initialData ? 'ویرایش پرونده بیمار' : 'ثبت بیمار جدید'}
+            {initialData ? t('patient_modal_edit') : t('patient_modal_new')}
           </h3>
           <button onClick={onClose} className="p-2 hover:bg-gray-200 rounded-full transition-colors">
             <X className="w-5 h-5 text-gray-500" />
           </button>
         </div>
         <form onSubmit={handleSubmit} className="p-6 overflow-y-auto space-y-4">
-          <div><label className="block text-sm font-medium text-gray-700 mb-1">نام و نام خانوادگی</label><input type="text" required className="w-full p-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-medical-500 focus:border-transparent outline-none transition-all" placeholder="مثال: علی رضایی" value={formData.fullName} onChange={e => setFormData({...formData, fullName: e.target.value})} /></div>
+          <div><label className="block text-sm font-medium text-gray-700 mb-1">{t('patient_fullname')}</label><input type="text" required className={inputClass} value={formData.fullName} onChange={e => setFormData({...formData, fullName: e.target.value})} /></div>
           <div className="grid grid-cols-2 gap-4">
-            <div><label className="block text-sm font-medium text-gray-700 mb-1">سن (سال)</label><input type="number" required className="w-full p-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-medical-500 outline-none" value={formData.age} onChange={e => setFormData({...formData, age: Number(e.target.value)})} /></div>
-            <div><label className="block text-sm font-medium text-gray-700 mb-1">جنسیت</label><div className="flex bg-gray-100 p-1 rounded-xl"><button type="button" className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all ${formData.gender === 'male' ? 'bg-white text-medical-700 shadow-sm' : 'text-gray-500'}`} onClick={() => setFormData({...formData, gender: 'male'})}>آقا</button><button type="button" className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all ${formData.gender === 'female' ? 'bg-white text-medical-700 shadow-sm' : 'text-gray-500'}`} onClick={() => setFormData({...formData, gender: 'female'})}>خانم</button></div></div>
+            <div><label className="block text-sm font-medium text-gray-700 mb-1">{t('patient_age')}</label><input type="number" required className={inputClass} value={formData.age} onChange={e => setFormData({...formData, age: Number(e.target.value)})} /></div>
+            <div><label className="block text-sm font-medium text-gray-700 mb-1">{t('patient_gender')}</label><div className="flex bg-gray-100 p-1 rounded-xl"><button type="button" className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all ${formData.gender === 'male' ? 'bg-white text-medical-700 shadow-sm' : 'text-gray-500'}`} onClick={() => setFormData({...formData, gender: 'male'})}>{t('patient_male')}</button><button type="button" className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all ${formData.gender === 'female' ? 'bg-white text-medical-700 shadow-sm' : 'text-gray-500'}`} onClick={() => setFormData({...formData, gender: 'female'})}>{t('patient_female')}</button></div></div>
           </div>
-          <div><label className="block text-sm font-medium text-gray-700 mb-1">وزن (کیلوگرم)</label><input type="number" className="w-full p-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-medical-500 outline-none" value={formData.weight} onChange={e => setFormData({...formData, weight: Number(e.target.value)})} /></div>
-          <div><label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-1"><Activity className="w-4 h-4 text-orange-500" />سابقه بیماری</label><textarea className="w-full p-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-medical-500 outline-none h-20 resize-none" placeholder="دیابت، فشار خون و..." value={formData.medicalHistory} onChange={e => setFormData({...formData, medicalHistory: e.target.value})} /></div>
-          <div><label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-1"><AlertCircle className="w-4 h-4 text-red-500" />حساسیت‌ها و آلرژی</label><textarea className="w-full p-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-medical-500 outline-none h-20 resize-none" placeholder="پنی‌سیلین، آسپرین..." value={formData.allergies} onChange={e => setFormData({...formData, allergies: e.target.value})} /></div>
-          <div className="pt-4"><button type="submit" className="w-full bg-medical-700 text-white p-3 rounded-xl font-bold hover:bg-medical-900 transition-colors shadow-lg shadow-medical-500/30 flex items-center justify-center gap-2"><Save className="w-5 h-5" />ذخیره پرونده</button></div>
+          <div><label className="block text-sm font-medium text-gray-700 mb-1">{t('patient_weight')}</label><input type="number" className={inputClass} value={formData.weight} onChange={e => setFormData({...formData, weight: Number(e.target.value)})} /></div>
+          <div><label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-1"><Activity className="w-4 h-4 text-orange-500" />{t('patient_history')}</label><textarea className={`${inputClass} h-20 resize-none`} placeholder={t('patient_history_ph')} value={formData.medicalHistory} onChange={e => setFormData({...formData, medicalHistory: e.target.value})} /></div>
+          <div><label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-1"><AlertCircle className="w-4 h-4 text-red-500" />{t('patient_allergies')}</label><textarea className={`${inputClass} h-20 resize-none`} placeholder={t('patient_allergies_ph')} value={formData.allergies} onChange={e => setFormData({...formData, allergies: e.target.value})} /></div>
+          <div className="pt-4"><button type="submit" className="w-full bg-medical-700 text-white p-3 rounded-xl font-bold hover:bg-medical-900 transition-colors shadow-lg shadow-medical-500/30 flex items-center justify-center gap-2"><Save className="w-5 h-5" />{t('save')}</button></div>
         </form>
       </div>
     </div>
@@ -864,7 +900,7 @@ const PatientModal = ({ isOpen, onClose, onSave, initialData }: { isOpen: boolea
 };
 
 const PatientsView = ({ onEdit, onSelect, onHistory }: { onEdit: (p: Patient) => void, onSelect?: (p: Patient) => void, onHistory: (p: Patient) => void }) => {
-  const { t } = useLanguage();
+  const { t, direction } = useLanguage();
   const [patients, setPatients] = useState<Patient[]>([]);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
@@ -881,8 +917,8 @@ const PatientsView = ({ onEdit, onSelect, onHistory }: { onEdit: (p: Patient) =>
 
   const handleDelete = async (e: React.MouseEvent, patient: Patient) => {
     e.stopPropagation();
-    if (confirm(`آیا از حذف پرونده «${patient.fullName}» اطمینان دارید؟\nاین عملیات غیرقابل بازگشت است.`)) {
-       try { await dbParams.deletePatient(patient.id); deleteSinglePatient(patient.id); showToast('پرونده بیمار با موفقیت حذف شد', 'info'); loadPatients(); } catch (err) { console.error(err); showToast('خطا در حذف پرونده', 'error'); }
+    if (confirm(t('patients_delete_confirm', { name: patient.fullName }))) {
+       try { await dbParams.deletePatient(patient.id); deleteSinglePatient(patient.id); showToast(t('toast_deleted'), 'info'); loadPatients(); } catch (err) { console.error(err); showToast(t('toast_error'), 'error'); }
     }
   };
 
@@ -892,7 +928,7 @@ const PatientsView = ({ onEdit, onSelect, onHistory }: { onEdit: (p: Patient) =>
     <div className="p-4 md:p-8 pb-24 md:pb-8 max-w-5xl mx-auto">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
         <div><h1 className="text-2xl font-bold text-gray-800">{t('patients_title')}</h1><p className="text-gray-500 text-sm mt-1">{t('patients_subtitle')}</p></div>
-        <div className="w-full md:w-auto relative"><Search className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5 rtl:right-3 ltr:left-3" /><input type="text" placeholder={t('search_patient_placeholder')} className="w-full md:w-80 px-10 py-3 bg-white border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-medical-500 shadow-sm" value={search} onChange={(e) => setSearch(e.target.value)} /></div>
+        <div className="w-full md:w-auto relative"><Search className={`absolute top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5 ${direction === 'rtl' ? 'right-3' : 'left-3'}`} /><input type="text" placeholder={t('search_patient_placeholder')} className="w-full md:w-80 px-10 py-3 bg-white border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-medical-500 shadow-sm" value={search} onChange={(e) => setSearch(e.target.value)} /></div>
       </div>
       {loading ? (<div className="flex justify-center py-20"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-medical-700"></div></div>) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -916,7 +952,9 @@ const PatientsView = ({ onEdit, onSelect, onHistory }: { onEdit: (p: Patient) =>
 // ... [Settings components, DoctorProfileSettings, LanguageSettings, SecuritySettings, DrugsManager (Already Updated), TemplatesManager, BackupManager, PrintLayoutDesigner] ...
 
 const DoctorProfileSettings = () => {
+  const { t } = useLanguage();
   const { showToast } = useToast();
+  const { isHighContrast } = useTheme();
   const [profile, setProfile] = useState<DoctorProfile>({ id: 'profile', fullName: '', specialty: '', medicalCouncilNumber: '', address: '', phoneNumber: '', logo: '' });
   const [isSaved, setIsSaved] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -927,7 +965,7 @@ const DoctorProfileSettings = () => {
     e.preventDefault();
     await dbParams.saveDoctorProfile(profile);
     setIsSaved(true);
-    showToast('اطلاعات پزشک با موفقیت ذخیره شد', 'success');
+    showToast(t('toast_saved'), 'success');
     syncTelemetry();
     setTimeout(() => setIsSaved(false), 2000);
   };
@@ -935,26 +973,30 @@ const DoctorProfileSettings = () => {
   const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      if (file.size > 500000) { showToast('حجم لوگو باید کمتر از ۵۰۰ کیلوبایت باشد.', 'error'); return; }
+      if (file.size > 500000) { showToast(t('toast_logo_size'), 'error'); return; }
       const reader = new FileReader();
-      reader.onloadend = () => { setProfile({ ...profile, logo: reader.result as string }); showToast('لوگو بارگذاری شد. لطفا ذخیره کنید.', 'success'); };
+      reader.onloadend = () => { setProfile({ ...profile, logo: reader.result as string }); showToast(t('toast_saved'), 'success'); };
       reader.readAsDataURL(file);
     }
   };
 
+  const inputClass = isHighContrast 
+    ? "w-full p-3 border-2 border-gray-600 rounded-xl outline-none focus:border-black bg-white shadow-sm font-medium text-gray-900" 
+    : "w-full p-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-medical-500 outline-none";
+
   return (
     <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
-      <div className="flex items-center gap-2 mb-6"><UserCog className="w-6 h-6 text-medical-700" /><h2 className="text-lg font-bold text-gray-800">اطلاعات پزشک</h2></div>
+      <div className="flex items-center gap-2 mb-6"><UserCog className="w-6 h-6 text-medical-700" /><h2 className="text-lg font-bold text-gray-800">{t('settings_tab_profile')}</h2></div>
       <form onSubmit={handleSave} className="space-y-6 max-w-2xl">
         <div className="flex items-center gap-6 p-4 bg-gray-50 rounded-xl border border-dashed border-gray-300">
            <div className="w-24 h-24 bg-white rounded-xl border border-gray-200 flex items-center justify-center overflow-hidden relative group">{profile.logo ? (<img src={profile.logo} alt="Logo" className="w-full h-full object-contain" />) : (<ImageIcon className="w-8 h-8 text-gray-300" />)}<button type="button" onClick={() => setProfile({...profile, logo: ''})} className={`absolute inset-0 bg-black/50 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity ${!profile.logo && 'hidden'}`}><Trash2 className="w-5 h-5" /></button></div>
-           <div><h3 className="font-bold text-gray-700 text-sm mb-1">لوگوی سربرگ</h3><p className="text-xs text-gray-500 mb-3">فرمت PNG یا JPG (حداکثر ۵۰۰ کیلوبایت)</p><input type="file" accept="image/*" className="hidden" ref={fileInputRef} onChange={handleLogoUpload} /><button type="button" onClick={() => fileInputRef.current?.click()} className="text-sm bg-white border border-gray-300 px-3 py-1.5 rounded-lg hover:bg-gray-100 transition-colors">انتخاب تصویر</button></div>
+           <div><h3 className="font-bold text-gray-700 text-sm mb-1">{t('profile_logo')}</h3><p className="text-xs text-gray-500 mb-3">{t('profile_logo_desc')}</p><input type="file" accept="image/*" className="hidden" ref={fileInputRef} onChange={handleLogoUpload} /><button type="button" onClick={() => fileInputRef.current?.click()} className="text-sm bg-white border border-gray-300 px-3 py-1.5 rounded-lg hover:bg-gray-100 transition-colors">{t('profile_logo_select')}</button></div>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4"><div><label className="block text-sm font-medium text-gray-700 mb-1">نام و نام خانوادگی پزشک</label><input required className="w-full p-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-medical-500 outline-none" value={profile.fullName} onChange={e => setProfile({...profile, fullName: e.target.value})} placeholder="دکتر..." /></div><div><label className="block text-sm font-medium text-gray-700 mb-1">تخصص</label><input required className="w-full p-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-medical-500 outline-none" value={profile.specialty} onChange={e => setProfile({...profile, specialty: e.target.value})} placeholder="مثال: متخصص اطفال" /></div></div>
-        <div><label className="block text-sm font-medium text-gray-700 mb-1">شماره نظام پزشکی</label><input required className="w-full p-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-medical-500 outline-none" value={profile.medicalCouncilNumber} onChange={e => setProfile({...profile, medicalCouncilNumber: e.target.value})} /></div>
-        <div><label className="block text-sm font-medium text-gray-700 mb-1">آدرس مطب (جهت چاپ در سربرگ)</label><textarea className="w-full p-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-medical-500 outline-none resize-none h-20" value={profile.address} onChange={e => setProfile({...profile, address: e.target.value})} /></div>
-        <div><label className="block text-sm font-medium text-gray-700 mb-1">شماره تماس مطب</label><input className="w-full p-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-medical-500 outline-none text-left" style={{direction: 'ltr'}} value={profile.phoneNumber} onChange={e => setProfile({...profile, phoneNumber: e.target.value})} /></div>
-        <div className="pt-4"><button type="submit" className="bg-medical-700 text-white px-8 py-3 rounded-xl font-bold hover:bg-medical-900 transition-all flex items-center gap-2"><Save className="w-4 h-4" />{isSaved ? 'ذخیره شد' : 'ذخیره تنظیمات'}</button></div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4"><div><label className="block text-sm font-medium text-gray-700 mb-1">{t('profile_doc_name')}</label><input required className={inputClass} value={profile.fullName} onChange={e => setProfile({...profile, fullName: e.target.value})} /></div><div><label className="block text-sm font-medium text-gray-700 mb-1">{t('profile_specialty')}</label><input required className={inputClass} value={profile.specialty} onChange={e => setProfile({...profile, specialty: e.target.value})} /></div></div>
+        <div><label className="block text-sm font-medium text-gray-700 mb-1">{t('profile_med_num')}</label><input required className={inputClass} value={profile.medicalCouncilNumber} onChange={e => setProfile({...profile, medicalCouncilNumber: e.target.value})} /></div>
+        <div><label className="block text-sm font-medium text-gray-700 mb-1">{t('profile_address')}</label><textarea className={`${inputClass} resize-none h-20`} value={profile.address} onChange={e => setProfile({...profile, address: e.target.value})} /></div>
+        <div><label className="block text-sm font-medium text-gray-700 mb-1">{t('profile_phone')}</label><input className={`${inputClass} text-left`} style={{direction: 'ltr'}} value={profile.phoneNumber} onChange={e => setProfile({...profile, phoneNumber: e.target.value})} /></div>
+        <div className="pt-4"><button type="submit" className="bg-medical-700 text-white px-8 py-3 rounded-xl font-bold hover:bg-medical-900 transition-all flex items-center gap-2"><Save className="w-4 h-4" />{isSaved ? t('toast_saved') : t('profile_save_btn')}</button></div>
       </form>
     </div>
   );
@@ -976,39 +1018,71 @@ const LanguageSettings = () => {
   );
 };
 
+const AppearanceSettings = () => {
+  const { t } = useLanguage();
+  const { isHighContrast, toggleHighContrast } = useTheme();
+
+  return (
+    <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+      <div className="flex items-center gap-2 mb-6"><Monitor className="w-6 h-6 text-medical-700" /><h2 className="text-lg font-bold text-gray-800">{t('appearance_title')}</h2></div>
+      <p className="text-gray-500 mb-6">{t('appearance_desc')}</p>
+      
+      <div className={`border-2 rounded-2xl p-6 flex justify-between items-center cursor-pointer transition-all ${isHighContrast ? 'border-medical-600 bg-medical-50' : 'border-gray-200 hover:border-gray-300'}`} onClick={toggleHighContrast}>
+        <div>
+           <div className="font-bold text-gray-800 text-lg mb-1">{t('appearance_hc_title')}</div>
+           <div className="text-sm text-gray-500">{t('appearance_hc_desc')}</div>
+        </div>
+        <div className={`w-14 h-8 rounded-full p-1 transition-colors flex items-center ${isHighContrast ? 'bg-medical-600 justify-end' : 'bg-gray-300 justify-start'}`}>
+            <div className="w-6 h-6 bg-white rounded-full shadow-md"></div>
+        </div>
+      </div>
+      <div className="mt-4 text-center text-sm font-bold text-medical-700">
+         {isHighContrast ? t('appearance_hc_on') : t('appearance_hc_off')}
+      </div>
+    </div>
+  );
+};
+
 const SecuritySettings = () => {
+  const { t } = useLanguage();
   const { showToast } = useToast();
+  const { isHighContrast } = useTheme();
   const [oldPass, setOldPass] = useState('');
   const [newPass, setNewPass] = useState('');
   const [confirmPass, setConfirmPass] = useState('');
   
   const handleChangePassword = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!oldPass || !newPass || !confirmPass) { showToast('لطفا تمام فیلدها را پر کنید', 'error'); return; }
-    if (newPass !== confirmPass) { showToast('تکرار رمز عبور جدید مطابقت ندارد', 'error'); return; }
+    if (!oldPass || !newPass || !confirmPass) { showToast(t('toast_fill_all'), 'error'); return; }
+    if (newPass !== confirmPass) { showToast(t('toast_pass_mismatch'), 'error'); return; }
     const isValid = await dbParams.checkAuth(oldPass);
-    if (!isValid) { showToast('رمز عبور فعلی اشتباه است', 'error'); return; }
+    if (!isValid) { showToast(t('toast_pass_wrong'), 'error'); return; }
     await dbParams.changePassword(newPass);
-    showToast('رمز عبور با موفقیت تغییر کرد', 'success');
+    showToast(t('toast_pass_changed'), 'success');
     setOldPass(''); setNewPass(''); setConfirmPass('');
   };
 
+  const inputClass = isHighContrast 
+    ? "w-full p-3 border-2 border-gray-600 rounded-xl focus:border-black outline-none bg-white shadow-sm font-mono font-medium text-gray-900" 
+    : "w-full p-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-medical-500 outline-none font-mono";
+
   return (
     <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
-      <div className="flex items-center gap-2 mb-6"><ShieldCheck className="w-6 h-6 text-medical-700" /><h2 className="text-lg font-bold text-gray-800">امنیت و رمز عبور</h2></div>
+      <div className="flex items-center gap-2 mb-6"><ShieldCheck className="w-6 h-6 text-medical-700" /><h2 className="text-lg font-bold text-gray-800">{t('settings_tab_security')}</h2></div>
       <form onSubmit={handleChangePassword} className="max-w-md space-y-4">
-        <div><label className="block text-sm font-medium text-gray-700 mb-1">رمز عبور فعلی</label><input type="password" className="w-full p-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-medical-500 outline-none text-left font-mono" dir="ltr" value={oldPass} onChange={e => setOldPass(e.target.value)} /></div>
-        <div className="pt-2 border-t border-dashed border-gray-200"><label className="block text-sm font-medium text-gray-700 mb-1 mt-2">رمز عبور جدید</label><input type="password" className="w-full p-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-medical-500 outline-none text-left font-mono" dir="ltr" value={newPass} onChange={e => setNewPass(e.target.value)} /></div>
-        <div><label className="block text-sm font-medium text-gray-700 mb-1">تکرار رمز جدید</label><input type="password" className="w-full p-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-medical-500 outline-none text-left font-mono" dir="ltr" value={confirmPass} onChange={e => setConfirmPass(e.target.value)} /></div>
-        <div className="pt-4"><button type="submit" className="w-full bg-gray-800 text-white py-3 rounded-xl font-bold hover:bg-black transition-colors">تغییر رمز عبور</button></div>
+        <div><label className="block text-sm font-medium text-gray-700 mb-1">{t('security_current_pass')}</label><input type="password" className={inputClass} dir="ltr" value={oldPass} onChange={e => setOldPass(e.target.value)} /></div>
+        <div className="pt-2 border-t border-dashed border-gray-200"><label className="block text-sm font-medium text-gray-700 mb-1 mt-2">{t('security_new_pass')}</label><input type="password" className={inputClass} dir="ltr" value={newPass} onChange={e => setNewPass(e.target.value)} /></div>
+        <div><label className="block text-sm font-medium text-gray-700 mb-1">{t('security_confirm_pass')}</label><input type="password" className={inputClass} dir="ltr" value={confirmPass} onChange={e => setConfirmPass(e.target.value)} /></div>
+        <div className="pt-4"><button type="submit" className="w-full bg-gray-800 text-white py-3 rounded-xl font-bold hover:bg-black transition-colors">{t('security_btn_change')}</button></div>
       </form>
     </div>
   );
 };
 
 const DrugsManager = () => {
-  const { t } = useLanguage();
+  const { t, direction } = useLanguage();
   const { showToast } = useToast();
+  const { isHighContrast } = useTheme();
   const [activeSubTab, setActiveSubTab] = useState<'mylist' | 'library'>('mylist');
   const [drugs, setDrugs] = useState<Drug[]>([]);
   const [search, setSearch] = useState('');
@@ -1021,18 +1095,22 @@ const DrugsManager = () => {
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault(); if (!editingDrug?.name) return;
     const drug: Drug = { id: editingDrug.id || crypto.randomUUID(), name: editingDrug.name, tradeName: editingDrug.tradeName || '', defaultInstruction: editingDrug.defaultInstruction };
-    await dbParams.addDrug(drug); setEditingDrug(null); loadDrugs(); showToast('دارو با موفقیت ذخیره شد', 'success');
+    await dbParams.addDrug(drug); setEditingDrug(null); loadDrugs(); showToast(t('toast_saved'), 'success');
   };
-  const handleDelete = async (id: string) => { if (confirm('آیا از حذف این دارو اطمینان دارید؟')) { await dbParams.deleteDrug(id); loadDrugs(); showToast('دارو حذف شد', 'info'); } };
+  const handleDelete = async (id: string) => { if (confirm(t('drug_delete_confirm'))) { await dbParams.deleteDrug(id); loadDrugs(); showToast(t('toast_deleted'), 'info'); } };
   const addFromLibrary = async (refDrug: any) => {
     const exists = drugs.some(d => d.name.toLowerCase() === refDrug.name.toLowerCase());
-    if (exists) { showToast('این دارو قبلاً در لیست شما موجود است', 'error'); return; }
+    if (exists) { showToast(t('toast_error'), 'error'); return; }
     const newDrug: Drug = { id: crypto.randomUUID(), name: refDrug.name, defaultInstruction: refDrug.instruction };
-    await dbParams.addDrug(newDrug); loadDrugs(); showToast('دارو به لیست شخصی اضافه شد', 'success');
+    await dbParams.addDrug(newDrug); loadDrugs(); showToast(t('toast_saved'), 'success');
   };
 
   const filtered = drugs.filter(d => d.name.toLowerCase().includes(search.toLowerCase()) || (d.tradeName && d.tradeName.toLowerCase().includes(search.toLowerCase())));
   const filteredLibrary = REFERENCE_DRUGS.filter(d => { const matchesCategory = selectedCategory === 'all' || d.category === selectedCategory; const matchesSearch = d.name.toLowerCase().includes(libSearch.toLowerCase()); return matchesCategory && matchesSearch; });
+
+  const inputClass = isHighContrast 
+    ? "w-full p-3 border-2 border-gray-600 rounded-xl mb-4 focus:border-black outline-none bg-white shadow-sm font-medium text-gray-900" 
+    : "w-full p-3 border border-gray-200 rounded-xl mb-4 focus:ring-2 focus:ring-medical-500 outline-none";
 
   return (
     <div className="p-4 md:p-8 pb-24 md:pb-8 max-w-5xl mx-auto">
@@ -1044,7 +1122,7 @@ const DrugsManager = () => {
       {activeSubTab === 'mylist' ? (
         <>
           <div className="flex gap-2 mb-6">
-             <div className="relative flex-1"><Search className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5 rtl:right-3 ltr:left-3" /><input className="w-full px-10 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-medical-500 outline-none shadow-sm" placeholder={t('drugs_search_my')} value={search} onChange={e => setSearch(e.target.value)} /></div>
+             <div className="relative flex-1"><Search className={`absolute top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5 ${direction === 'rtl' ? 'right-3' : 'left-3'}`} /><input className="w-full px-10 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-medical-500 outline-none shadow-sm" placeholder={t('drugs_search_my')} value={search} onChange={e => setSearch(e.target.value)} /></div>
              <button onClick={() => setEditingDrug({ name: '', tradeName: '', defaultInstruction: '' })} className="bg-medical-700 text-white hover:bg-medical-900 px-4 py-3 rounded-xl font-bold flex items-center gap-2 transition-colors shadow-lg shadow-medical-500/30 whitespace-nowrap"><PlusCircle className="w-5 h-5" /><span className="hidden md:inline">{t('drugs_add_manual')}</span></button>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -1064,8 +1142,8 @@ const DrugsManager = () => {
       ) : (
         <>
           <div className="mb-6 space-y-4">
-            <div className="flex gap-2 overflow-x-auto pb-2 no-scrollbar"><button onClick={() => setSelectedCategory('all')} className={`px-3 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-colors border ${selectedCategory === 'all' ? 'bg-gray-800 text-white border-gray-800' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}>همه</button>{DRUG_CATEGORIES.map(cat => (<button key={cat.id} onClick={() => setSelectedCategory(cat.id)} className={`px-3 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-colors border ${selectedCategory === cat.id ? 'bg-medical-700 text-white border-medical-700' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}>{cat.label}</button>))}</div>
-            <div className="relative"><Search className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5 rtl:right-3 ltr:left-3" /><input className="w-full px-10 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-medical-500 outline-none shadow-sm" placeholder="جستجو در کتابخانه..." value={libSearch} onChange={e => setLibSearch(e.target.value)}/></div>
+            <div className="flex gap-2 overflow-x-auto pb-2 no-scrollbar"><button onClick={() => setSelectedCategory('all')} className={`px-3 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-colors border ${selectedCategory === 'all' ? 'bg-gray-800 text-white border-gray-800' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}>{t('cat_all')}</button>{DRUG_CATEGORIES.map(cat => (<button key={cat.id} onClick={() => setSelectedCategory(cat.id)} className={`px-3 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-colors border ${selectedCategory === cat.id ? 'bg-medical-700 text-white border-medical-700' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}>{t(`cat_${cat.id}` as any)}</button>))}</div>
+            <div className="relative"><Search className={`absolute top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5 ${direction === 'rtl' ? 'right-3' : 'left-3'}`} /><input className="w-full px-10 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-medical-500 outline-none shadow-sm" placeholder={t('drugs_search_lib')} value={libSearch} onChange={e => setLibSearch(e.target.value)}/></div>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
              {filteredLibrary.slice(0, 50).map((d, idx) => (<div key={idx} className="bg-gray-50 border border-gray-200 rounded-xl p-3 flex justify-between items-center hover:bg-white hover:shadow-sm transition-all"><div className="min-w-0 flex-1"><div className="font-bold text-gray-800 text-sm truncate">{d.name}</div><div className="text-xs text-gray-500 truncate">{d.instruction}</div></div><button onClick={() => addFromLibrary(d)} className="bg-white border border-gray-300 hover:border-medical-500 hover:text-medical-600 p-2 rounded-lg shadow-sm transition-colors"><Plus className="w-4 h-4" /></button></div>))}
@@ -1075,11 +1153,11 @@ const DrugsManager = () => {
       {editingDrug && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <form onSubmit={handleSave} className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-2xl">
-             <div className="flex justify-between items-center mb-6"><h3 className="font-bold text-lg text-gray-800">{editingDrug.id ? 'ویرایش دارو' : 'افزودن دارو جدید'}</h3><button type="button" onClick={() => setEditingDrug(null)}><X className="w-5 h-5 text-gray-500"/></button></div>
-             <label className="block text-sm font-medium text-gray-700 mb-1">{t('drug_generic_name')}</label><input autoFocus className="w-full p-3 border border-gray-200 rounded-xl mb-4 focus:ring-2 focus:ring-medical-500 outline-none" placeholder="مثال: Amoxicillin 500" value={editingDrug.name} onChange={e => setEditingDrug({...editingDrug, name: e.target.value})} required />
-             <label className="block text-sm font-medium text-gray-700 mb-1">{t('drug_trade_name')}</label><input className="w-full p-3 border border-gray-200 rounded-xl mb-4 focus:ring-2 focus:ring-medical-500 outline-none" placeholder="مثال: Amoxil (اختیاری)" value={editingDrug.tradeName || ''} onChange={e => setEditingDrug({...editingDrug, tradeName: e.target.value})} />
-             <label className="block text-sm font-medium text-gray-700 mb-1">دستور مصرف پیش‌فرض</label><input className="w-full p-3 border border-gray-200 rounded-xl mb-6 focus:ring-2 focus:ring-medical-500 outline-none" value={editingDrug.defaultInstruction} onChange={e => setEditingDrug({...editingDrug, defaultInstruction: e.target.value})} />
-             <button type="submit" className="w-full py-3 bg-medical-700 text-white rounded-xl font-bold hover:bg-medical-900 transition-colors">ذخیره</button>
+             <div className="flex justify-between items-center mb-6"><h3 className="font-bold text-lg text-gray-800">{editingDrug.id ? t('drug_edit_title') : t('drug_new_title')}</h3><button type="button" onClick={() => setEditingDrug(null)}><X className="w-5 h-5 text-gray-500"/></button></div>
+             <label className="block text-sm font-medium text-gray-700 mb-1">{t('drug_generic_name')}</label><input autoFocus className={inputClass} placeholder="مثال: Amoxicillin 500" value={editingDrug.name} onChange={e => setEditingDrug({...editingDrug, name: e.target.value})} required />
+             <label className="block text-sm font-medium text-gray-700 mb-1">{t('drug_trade_name')}</label><input className={inputClass} placeholder="مثال: Amoxil (اختیاری)" value={editingDrug.tradeName || ''} onChange={e => setEditingDrug({...editingDrug, tradeName: e.target.value})} />
+             <label className="block text-sm font-medium text-gray-700 mb-1">{t('drug_default_instruction')}</label><input className={inputClass.replace('mb-4', 'mb-6')} value={editingDrug.defaultInstruction} onChange={e => setEditingDrug({...editingDrug, defaultInstruction: e.target.value})} />
+             <button type="submit" className="w-full py-3 bg-medical-700 text-white rounded-xl font-bold hover:bg-medical-900 transition-colors">{t('save')}</button>
           </form>
         </div>
       )}
@@ -1090,32 +1168,37 @@ const DrugsManager = () => {
 const TemplatesManager = () => {
   const { t } = useLanguage();
   const { showToast } = useToast();
+  const { isHighContrast } = useTheme();
   const [templates, setTemplates] = useState<PrescriptionTemplate[]>([]);
   const [editingTemplate, setEditingTemplate] = useState<PrescriptionTemplate | null>(null);
 
   useEffect(() => { loadTemplates(); }, []);
   const loadTemplates = async () => { const data = await dbParams.getAllTemplates(); setTemplates(data); };
-  const handleDelete = async (id: string) => { if (confirm('حذف شود؟')) { await dbParams.deleteTemplate(id); loadTemplates(); showToast('نسخه آماده حذف شد', 'info'); syncTelemetry(); } };
-  const handleSave = async (e: React.FormEvent) => { e.preventDefault(); if (!editingTemplate || !editingTemplate.title) return; await dbParams.addTemplate(editingTemplate); setEditingTemplate(null); loadTemplates(); showToast('نسخه آماده با موفقیت ذخیره شد', 'success'); syncTelemetry(); };
+  const handleDelete = async (id: string) => { if (confirm(t('templates_delete_confirm'))) { await dbParams.deleteTemplate(id); loadTemplates(); showToast(t('toast_deleted'), 'info'); syncTelemetry(); } };
+  const handleSave = async (e: React.FormEvent) => { e.preventDefault(); if (!editingTemplate || !editingTemplate.title) return; await dbParams.addTemplate(editingTemplate); setEditingTemplate(null); loadTemplates(); showToast(t('toast_saved'), 'success'); syncTelemetry(); };
   const addRow = () => { if (!editingTemplate) return; const newItem: PrescriptionItem = { id: crypto.randomUUID(), drugName: '', dosage: '', instruction: '' }; setEditingTemplate({ ...editingTemplate, items: [...editingTemplate.items, newItem] }); };
   const removeRow = (itemId: string) => { if (!editingTemplate) return; setEditingTemplate({ ...editingTemplate, items: editingTemplate.items.filter(i => i.id !== itemId) }); };
   const updateRow = (itemId: string, field: keyof PrescriptionItem, value: string) => { if (!editingTemplate) return; const newItems = editingTemplate.items.map(item => item.id === itemId ? { ...item, [field]: value } : item); setEditingTemplate({ ...editingTemplate, items: newItems }); };
+
+  const inputClass = isHighContrast 
+    ? "p-3 border-2 border-gray-600 rounded-xl outline-none focus:border-black bg-white shadow-sm font-medium text-gray-900" 
+    : "p-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-medical-500 outline-none";
 
   if (editingTemplate) {
     return (
       <div className="p-4 md:p-8 h-screen md:h-auto flex flex-col max-w-5xl mx-auto">
         <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex-1 flex flex-col">
-          <div className="flex justify-between items-center mb-4 pb-4 border-b border-gray-100"><h3 className="font-bold text-lg">{editingTemplate.id ? 'ویرایش نسخه آماده' : 'نسخه آماده جدید'}</h3><button onClick={() => setEditingTemplate(null)} className="p-2 hover:bg-gray-100 rounded-full"><X className="w-5 h-5"/></button></div>
+          <div className="flex justify-between items-center mb-4 pb-4 border-b border-gray-100"><h3 className="font-bold text-lg">{editingTemplate.id ? t('edit') : t('templates_new')}</h3><button onClick={() => setEditingTemplate(null)} className="p-2 hover:bg-gray-100 rounded-full"><X className="w-5 h-5"/></button></div>
           <form onSubmit={handleSave} className="flex-1 flex flex-col overflow-hidden">
-             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4"><input required className="p-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-medical-500 outline-none" placeholder="عنوان نسخه (مثال: سرماخوردگی)" value={editingTemplate.title} onChange={e => setEditingTemplate({...editingTemplate, title: e.target.value})} /><input className="p-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-medical-500 outline-none" placeholder="تشخیص پیش‌فرض (Diagnosis)" value={editingTemplate.diagnosis} onChange={e => setEditingTemplate({...editingTemplate, diagnosis: e.target.value})} /></div>
+             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4"><input required className={inputClass} placeholder={t('visit_template_title_label')} value={editingTemplate.title} onChange={e => setEditingTemplate({...editingTemplate, title: e.target.value})} /><input className={inputClass} placeholder={t('visit_diagnosis')} value={editingTemplate.diagnosis} onChange={e => setEditingTemplate({...editingTemplate, diagnosis: e.target.value})} /></div>
              <div className="flex-1 overflow-y-auto bg-gray-50 rounded-xl p-2 border border-gray-100 mb-4">
                <table className="w-full text-sm">
-                 <thead className="text-gray-500 border-b border-gray-200"><tr><th className="pb-2 text-right font-normal">نام دارو</th><th className="pb-2 text-right font-normal w-24">دوز</th><th className="pb-2 text-right font-normal">دستور مصرف</th><th className="w-8"></th></tr></thead>
-                 <tbody className="divide-y divide-gray-100">{editingTemplate.items.map(item => (<tr key={item.id} className="group"><td className="p-2"><input className="w-full bg-transparent outline-none placeholder-gray-400" placeholder="نام دارو..." value={item.drugName} onChange={e => updateRow(item.id, 'drugName', e.target.value)} list="drug-suggestions" /></td><td className="p-2"><input className="w-full bg-transparent outline-none placeholder-gray-400" placeholder="دوز" value={item.dosage} onChange={e => updateRow(item.id, 'dosage', e.target.value)} /></td><td className="p-2"><input className="w-full bg-transparent outline-none placeholder-gray-400" placeholder="دستور..." value={item.instruction} onChange={e => updateRow(item.id, 'instruction', e.target.value)} /></td><td className="p-2 text-center"><button type="button" onClick={() => removeRow(item.id)} className="text-red-400 hover:text-red-600 opacity-0 group-hover:opacity-100"><MinusCircle className="w-4 h-4"/></button></td></tr>))}</tbody>
+                 <thead className="text-gray-500 border-b border-gray-200"><tr><th className="pb-2 text-right font-normal px-2">{t('visit_drug_name')}</th><th className="pb-2 text-right font-normal w-24 px-2">{t('visit_dosage')}</th><th className="pb-2 text-right font-normal px-2">{t('visit_instruction')}</th><th className="w-8"></th></tr></thead>
+                 <tbody className="divide-y divide-gray-100">{editingTemplate.items.map(item => (<tr key={item.id} className="group"><td className="p-2"><input className="w-full bg-transparent outline-none placeholder-gray-400" placeholder={t('visit_drug_name')} value={item.drugName} onChange={e => updateRow(item.id, 'drugName', e.target.value)} list="drug-suggestions" /></td><td className="p-2"><input className="w-full bg-transparent outline-none placeholder-gray-400" placeholder={t('visit_dosage')} value={item.dosage} onChange={e => updateRow(item.id, 'dosage', e.target.value)} /></td><td className="p-2"><input className="w-full bg-transparent outline-none placeholder-gray-400" placeholder={t('visit_instruction')} value={item.instruction} onChange={e => updateRow(item.id, 'instruction', e.target.value)} /></td><td className="p-2 text-center"><button type="button" onClick={() => removeRow(item.id)} className="text-red-400 hover:text-red-600 opacity-0 group-hover:opacity-100"><MinusCircle className="w-4 h-4"/></button></td></tr>))}</tbody>
                </table>
-               <button type="button" onClick={addRow} className="mt-4 w-full py-2 border border-dashed border-gray-300 rounded-lg text-gray-500 text-sm hover:bg-gray-100 flex items-center justify-center gap-2"><PlusCircle className="w-4 h-4"/> افزودن قلم دارو</button>
+               <button type="button" onClick={addRow} className="mt-4 w-full py-2 border border-dashed border-gray-300 rounded-lg text-gray-500 text-sm hover:bg-gray-100 flex items-center justify-center gap-2"><PlusCircle className="w-4 h-4"/> {t('visit_add_item')}</button>
              </div>
-             <button type="submit" className="w-full bg-medical-700 text-white py-3 rounded-xl font-bold">ذخیره نسخه آماده</button>
+             <button type="submit" className="w-full bg-medical-700 text-white py-3 rounded-xl font-bold">{t('save')}</button>
           </form>
         </div>
       </div>
@@ -1126,7 +1209,7 @@ const TemplatesManager = () => {
     <div className="p-4 md:p-8 pb-24 md:pb-8 max-w-5xl mx-auto">
        <div className="flex justify-between items-center mb-8"><div><h1 className="text-2xl font-bold text-gray-800">{t('templates_title')}</h1><p className="text-gray-500 text-sm mt-1">{t('templates_subtitle')}</p></div><button onClick={() => setEditingTemplate({ id: crypto.randomUUID(), title: '', diagnosis: '', items: [] })} className="bg-medical-700 text-white hover:bg-medical-900 px-6 py-3 rounded-xl font-bold flex items-center gap-2 transition-colors shadow-lg shadow-medical-500/30"><PlusCircle className="w-5 h-5" />{t('templates_new')}</button></div>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {templates.map(tmpl => (<div key={tmpl.id} className="bg-white border border-gray-100 rounded-xl p-5 hover:shadow-md transition-all group relative cursor-pointer" onClick={() => setEditingTemplate(tmpl)}><div className="flex justify-between items-start"><div><h3 className="font-bold text-gray-800 text-lg mb-1">{tmpl.title}</h3><p className="text-sm text-gray-500 flex items-center gap-1">{tmpl.diagnosis ? (<span className="bg-gray-100 px-2 py-0.5 rounded text-xs">{tmpl.diagnosis}</span>) : (<span className="italic text-gray-300 text-xs">بدون تشخیص پیش‌فرض</span>)}</p></div><div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity absolute top-4 left-4"><button onClick={(e) => { e.stopPropagation(); handleDelete(tmpl.id); }} className="p-2 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition-colors"><Trash2 className="w-4 h-4"/></button></div></div><div className="mt-4 pt-4 border-t border-gray-50 flex justify-between items-center"><span className="text-xs text-gray-400">تعداد اقلام:</span><span className="text-sm font-bold text-medical-700 bg-medical-50 px-2 py-1 rounded-md">{tmpl.items.length} دارو</span></div></div>))}
+        {templates.map(tmpl => (<div key={tmpl.id} className="bg-white border border-gray-100 rounded-xl p-5 hover:shadow-md transition-all group relative cursor-pointer" onClick={() => setEditingTemplate(tmpl)}><div className="flex justify-between items-start"><div><h3 className="font-bold text-gray-800 text-lg mb-1">{tmpl.title}</h3><p className="text-sm text-gray-500 flex items-center gap-1">{tmpl.diagnosis ? (<span className="bg-gray-100 px-2 py-0.5 rounded text-xs">{tmpl.diagnosis}</span>) : (<span className="italic text-gray-300 text-xs">بدون تشخیص پیش‌فرض</span>)}</p></div><div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity absolute top-4 left-4"><button onClick={(e) => { e.stopPropagation(); handleDelete(tmpl.id); }} className="p-2 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition-colors"><Trash2 className="w-4 h-4"/></button></div></div><div className="mt-4 pt-4 border-t border-gray-50 flex justify-between items-center"><span className="text-xs text-gray-400">{t('templates_items_count')}:</span><span className="text-sm font-bold text-medical-700 bg-medical-50 px-2 py-1 rounded-md">{tmpl.items.length}</span></div></div>))}
         {templates.length === 0 && (<div className="col-span-full text-center py-20 bg-white rounded-2xl border border-dashed border-gray-300"><FileText className="w-12 h-12 text-gray-300 mx-auto mb-3" /><p className="text-gray-500">{t('templates_empty')}</p></div>)}
       </div>
     </div>
@@ -1134,24 +1217,26 @@ const TemplatesManager = () => {
 };
 
 const BackupManager = () => {
+  const { t } = useLanguage();
   const { showToast } = useToast();
   const handleBackup = async () => { await backupSystem.exportData(); showToast('فایل پشتیبان دانلود شد', 'success'); };
   const handleRestore = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]; if (!file) return;
-    if (confirm('هشدار مهم: با بازگردانی نسخه پشتیبان، تمام اطلاعات فعلی جایگزین خواهند شد و اطلاعات جدید حذف می‌شوند. آیا مطمئن هستید؟')) { const reader = new FileReader(); reader.onload = async (ev) => { const json = ev.target?.result as string; try { await backupSystem.importData(json); showToast('اطلاعات با موفقیت بازیابی شد. صفحه مجددا بارگذاری می‌شود.', 'success'); setTimeout(() => window.location.reload(), 2000); } catch (err) { showToast('خطا در بازیابی اطلاعات', 'error'); console.error(err); } }; reader.readAsText(file); }
+    if (confirm(t('backup_restore_confirm'))) { const reader = new FileReader(); reader.onload = async (ev) => { const json = ev.target?.result as string; try { await backupSystem.importData(json); showToast(t('toast_backup_restored'), 'success'); setTimeout(() => window.location.reload(), 2000); } catch (err) { showToast(t('toast_error'), 'error'); console.error(err); } }; reader.readAsText(file); }
   };
   return (
     <div className="bg-white p-8 rounded-2xl shadow-sm border border-gray-100">
-      <div className="flex items-center gap-2 mb-6"><Database className="w-6 h-6 text-medical-700" /><h2 className="text-lg font-bold text-gray-800">مدیریت داده‌ها و پشتیبان‌گیری</h2></div>
+      <div className="flex items-center gap-2 mb-6"><Database className="w-6 h-6 text-medical-700" /><h2 className="text-lg font-bold text-gray-800">{t('settings_tab_data')}</h2></div>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-        <div className="border border-gray-100 rounded-2xl p-6 bg-gray-50"><div className="flex items-center gap-3 mb-4 text-blue-800"><div className="bg-blue-100 p-3 rounded-full"><Download className="w-6 h-6" /></div><h3 className="font-bold">تهیه نسخه پشتیبان</h3></div><p className="text-sm text-gray-600 mb-6 leading-relaxed">با کلیک روی دکمه زیر، یک فایل حاوی تمام اطلاعات بیماران، داروها، نسخه‌ها و تنظیمات دانلود می‌شود. پیشنهاد می‌شود به صورت هفتگی این کار را انجام دهید.</p><button onClick={handleBackup} className="w-full py-4 bg-white border border-blue-200 text-blue-700 font-bold rounded-xl hover:bg-blue-50 transition-colors shadow-sm">دانلود فایل پشتیبان</button></div>
-        <div className="border border-gray-100 rounded-2xl p-6 bg-gray-50"><div className="flex items-center gap-3 mb-4 text-orange-800"><div className="bg-orange-100 p-3 rounded-full"><Upload className="w-6 h-6" /></div><h3 className="font-bold">بازیابی اطلاعات</h3></div><p className="text-sm text-gray-600 mb-6 leading-relaxed">اگر قبلاً فایل پشتیبان تهیه کرده‌اید، می‌توانید آن را اینجا بارگذاری کنید. توجه کنید که اطلاعات فعلی پاک شده و با فایل جدید جایگزین می‌شود.</p><label className="w-full py-4 bg-white border border-orange-200 text-orange-700 font-bold rounded-xl hover:bg-orange-50 transition-colors shadow-sm block text-center cursor-pointer">انتخاب و بازیابی فایل<input type="file" accept=".json" className="hidden" onChange={handleRestore} /></label></div>
+        <div className="border border-gray-100 rounded-2xl p-6 bg-gray-50"><div className="flex items-center gap-3 mb-4 text-blue-800"><div className="bg-blue-100 p-3 rounded-full"><Download className="w-6 h-6" /></div><h3 className="font-bold">{t('backup_title')}</h3></div><p className="text-sm text-gray-600 mb-6 leading-relaxed">{t('backup_desc')}</p><button onClick={handleBackup} className="w-full py-4 bg-white border border-blue-200 text-blue-700 font-bold rounded-xl hover:bg-blue-50 transition-colors shadow-sm">{t('backup_btn_download')}</button></div>
+        <div className="border border-gray-100 rounded-2xl p-6 bg-gray-50"><div className="flex items-center gap-3 mb-4 text-orange-800"><div className="bg-orange-100 p-3 rounded-full"><Upload className="w-6 h-6" /></div><h3 className="font-bold">{t('backup_restore_title')}</h3></div><p className="text-sm text-gray-600 mb-6 leading-relaxed">{t('backup_restore_desc')}</p><label className="w-full py-4 bg-white border border-orange-200 text-orange-700 font-bold rounded-xl hover:bg-orange-50 transition-colors shadow-sm block text-center cursor-pointer">{t('backup_btn_select')}<input type="file" accept=".json" className="hidden" onChange={handleRestore} /></label></div>
       </div>
     </div>
   );
 };
 
 const PrintLayoutDesigner = () => {
+  const { t } = useLanguage();
   const { showToast } = useToast();
   const [profile, setProfile] = useState<DoctorProfile | null>(null);
   const [layout, setLayout] = useState<PrintLayout>({ paperSize: 'A5', elements: DEFAULT_PRINT_ELEMENTS });
@@ -1162,9 +1247,9 @@ const PrintLayoutDesigner = () => {
 
   useEffect(() => { dbParams.getDoctorProfile().then(p => { if (p) { setProfile(p); if (p.printLayout) setLayout(p.printLayout); } }); }, []);
 
-  const handleSave = async () => { const currentProfile = profile || { id: 'profile', fullName: '', specialty: '', medicalCouncilNumber: '' }; await dbParams.saveDoctorProfile({ ...currentProfile, printLayout: layout }); if (!profile) setProfile(currentProfile); showToast('طراحی نسخه با موفقیت ذخیره شد', 'success'); syncTelemetry(); };
-  const handleReset = () => { if(confirm('آیا مطمئن هستید؟ تمام تغییرات شما به حالت پیش‌فرض برمی‌گردد.')) { setLayout({ paperSize: 'A5', elements: DEFAULT_PRINT_ELEMENTS }); showToast('طراحی به حالت پیش‌فرض بازگشت', 'info'); } };
-  const handleBgUpload = (e: React.ChangeEvent<HTMLInputElement>) => { const file = e.target.files?.[0]; if (file) { const reader = new FileReader(); reader.onloadend = () => { setLayout(prev => ({ ...prev, backgroundImage: reader.result as string })); showToast('تصویر پس‌زمینه بارگذاری شد', 'success'); }; reader.readAsDataURL(file); } };
+  const handleSave = async () => { const currentProfile = profile || { id: 'profile', fullName: '', specialty: '', medicalCouncilNumber: '' }; await dbParams.saveDoctorProfile({ ...currentProfile, printLayout: layout }); if (!profile) setProfile(currentProfile); showToast(t('toast_saved'), 'success'); syncTelemetry(); };
+  const handleReset = () => { if(confirm(t('design_reset_confirm'))) { setLayout({ paperSize: 'A5', elements: DEFAULT_PRINT_ELEMENTS }); showToast(t('toast_saved'), 'info'); } };
+  const handleBgUpload = (e: React.ChangeEvent<HTMLInputElement>) => { const file = e.target.files?.[0]; if (file) { const reader = new FileReader(); reader.onloadend = () => { setLayout(prev => ({ ...prev, backgroundImage: reader.result as string })); showToast(t('toast_saved'), 'success'); }; reader.readAsDataURL(file); } };
   const rotateElement = (id: string) => { setLayout(prev => { const currentRotation = prev.elements[id].rotation || 0; return { ...prev, elements: { ...prev.elements, [id]: { ...prev.elements[id], rotation: (currentRotation + 90) % 360 } } }; }); };
   const handleMouseDown = (e: React.MouseEvent, id: string) => { e.stopPropagation(); setSelectedElementId(id); dragStartRef.current = { x: e.clientX, y: e.clientY }; initialPosRef.current = { x: layout.elements[id].x, y: layout.elements[id].y }; };
   const handleMouseMove = (e: React.MouseEvent) => { if (selectedElementId && dragStartRef.current && initialPosRef.current) { const dxPx = e.clientX - dragStartRef.current.x; const dyPx = e.clientY - dragStartRef.current.y; const newX = initialPosRef.current.x + (dxPx / MM_TO_PX); const newY = initialPosRef.current.y + (dyPx / MM_TO_PX); setLayout(prev => ({ ...prev, elements: { ...prev.elements, [selectedElementId]: { ...prev.elements[selectedElementId], x: Math.max(0, newX), y: Math.max(0, newY) } } })); } };
@@ -1174,10 +1259,10 @@ const PrintLayoutDesigner = () => {
 
   return (
     <div className="flex flex-col h-[calc(100vh-100px)]">
-      <div className="bg-white p-4 border-b border-gray-200 flex justify-between items-center"><div className="flex items-center gap-4"><h2 className="font-bold text-lg flex items-center gap-2"><LayoutTemplate className="w-5 h-5 text-medical-700"/>طراحی سربرگ و چیدمان نسخه</h2><div className="flex bg-gray-100 rounded-lg p-1 text-xs font-bold"><button onClick={() => setLayout(prev => ({...prev, paperSize: 'A5'}))} className={`px-3 py-1 rounded ${layout.paperSize === 'A5' ? 'bg-white shadow text-medical-700' : 'text-gray-500'}`}>کاغذ A5</button><button onClick={() => setLayout(prev => ({...prev, paperSize: 'A4'}))} className={`px-3 py-1 rounded ${layout.paperSize === 'A4' ? 'bg-white shadow text-medical-700' : 'text-gray-500'}`}>کاغذ A4</button></div></div><div className="flex gap-2"><label className="px-4 py-2 border border-gray-300 rounded-xl hover:bg-gray-50 cursor-pointer flex items-center gap-2 text-sm font-medium"><ImageIcon className="w-4 h-4"/>آپلود عکس سربرگ (پس‌زمینه)<input type="file" accept="image/*" className="hidden" onChange={handleBgUpload} /></label><button onClick={handleReset} className="px-4 py-2 text-red-600 hover:bg-red-50 rounded-xl text-sm font-medium">بازنشانی</button><button onClick={handleSave} className="px-6 py-2 bg-medical-700 text-white hover:bg-medical-900 rounded-xl text-sm font-bold flex items-center gap-2"><Save className="w-4 h-4"/>ذخیره طرح</button></div></div>
+      <div className="bg-white p-4 border-b border-gray-200 flex justify-between items-center"><div className="flex items-center gap-4"><h2 className="font-bold text-lg flex items-center gap-2"><LayoutTemplate className="w-5 h-5 text-medical-700"/>{t('design_title')}</h2><div className="flex bg-gray-100 rounded-lg p-1 text-xs font-bold"><button onClick={() => setLayout(prev => ({...prev, paperSize: 'A5'}))} className={`px-3 py-1 rounded ${layout.paperSize === 'A5' ? 'bg-white shadow text-medical-700' : 'text-gray-500'}`}>A5</button><button onClick={() => setLayout(prev => ({...prev, paperSize: 'A4'}))} className={`px-3 py-1 rounded ${layout.paperSize === 'A4' ? 'bg-white shadow text-medical-700' : 'text-gray-500'}`}>A4</button></div></div><div className="flex gap-2"><label className="px-4 py-2 border border-gray-300 rounded-xl hover:bg-gray-50 cursor-pointer flex items-center gap-2 text-sm font-medium"><ImageIcon className="w-4 h-4"/>{t('design_bg_upload')}<input type="file" accept="image/*" className="hidden" onChange={handleBgUpload} /></label><button onClick={handleReset} className="px-4 py-2 text-red-600 hover:bg-red-50 rounded-xl text-sm font-medium">{t('design_reset')}</button><button onClick={handleSave} className="px-6 py-2 bg-medical-700 text-white hover:bg-medical-900 rounded-xl text-sm font-bold flex items-center gap-2"><Save className="w-4 h-4"/>{t('save')}</button></div></div>
       <div className="flex flex-1 overflow-hidden">
-        <div className="w-64 bg-white border-l border-gray-200 p-4 overflow-y-auto z-10 shadow-lg"><h3 className="font-bold text-gray-700 mb-4 text-sm">المان‌های صفحه</h3><div className="space-y-2">{(Object.values(layout.elements) as PrintElement[]).map(el => (<div key={el.id} className={`p-3 rounded-lg border text-sm transition-colors cursor-pointer ${selectedElementId === el.id ? 'border-medical-500 bg-medical-50 ring-1 ring-medical-500' : 'border-gray-200 hover:bg-gray-50'}`} onClick={() => setSelectedElementId(el.id)}><div className="flex justify-between items-center mb-2"><span className="font-bold">{el.label}</span><input type="checkbox" checked={el.visible} onChange={(e) => { setLayout(prev => ({ ...prev, elements: { ...prev.elements, [el.id]: { ...el, visible: e.target.checked } } })); }} /></div>{el.visible && selectedElementId === el.id && (<div className="space-y-3"><div className="flex gap-2 items-center"><label className="text-xs text-gray-400 w-8">سایز</label><input type="number" className="w-full border border-gray-300 rounded px-1 py-0.5 text-xs" value={el.fontSize || 12} onChange={(e) => setLayout(prev => ({ ...prev, elements: { ...prev.elements, [el.id]: { ...el, fontSize: Number(e.target.value) } } }))} /><span className="text-[10px] text-gray-400">pt</span></div><div className="flex gap-2 items-center"><label className="text-xs text-gray-400 w-8">عرض</label><input type="number" className="w-full border border-gray-300 rounded px-1 py-0.5 text-xs" value={el.width ? Math.round(el.width) : 0} onChange={(e) => setLayout(prev => ({ ...prev, elements: { ...prev.elements, [el.id]: { ...el, width: Number(e.target.value) } } }))} /><span className="text-[10px] text-gray-400">mm</span></div><button onClick={() => rotateElement(el.id)} className="w-full flex items-center justify-center gap-2 py-1.5 border border-gray-300 rounded hover:bg-gray-50 text-xs font-medium"><RotateCw className="w-3 h-3" />چرخش ({el.rotation || 0}°)</button></div>)}</div>))}</div></div>
-        <div className="flex-1 bg-gray-100 overflow-auto flex items-center justify-center p-8 relative" onMouseMove={handleMouseMove} onMouseUp={handleMouseUp} onMouseLeave={handleMouseUp}><div ref={containerRef} className="bg-white shadow-2xl relative overflow-hidden select-none" style={{ width: `${paperWidthMm}mm`, height: `${paperHeightMm}mm`, direction: 'ltr' }}>{layout.backgroundImage ? (<img src={layout.backgroundImage} className="absolute inset-0 w-full h-full object-cover opacity-40 pointer-events-none" alt="" />) : (<div className="absolute inset-0 flex items-center justify-center text-gray-200 text-6xl font-bold opacity-20 pointer-events-none -rotate-45">{layout.paperSize} PAPER</div>)}<div className="absolute left-0 top-0 right-0 h-[10mm] border-b border-blue-100 opacity-50 pointer-events-none"></div><div className="absolute left-[10mm] top-0 bottom-0 w-[1px] bg-blue-100 opacity-50 pointer-events-none"></div>{(Object.values(layout.elements) as PrintElement[]).map(el => el.visible && (<div key={el.id} onMouseDown={(e) => handleMouseDown(e, el.id)} className={`absolute cursor-move group hover:z-50 ${selectedElementId === el.id ? 'z-50' : 'z-10'}`} style={{ left: `${el.x}mm`, top: `${el.y}mm`, width: el.width ? `${el.width}mm` : 'auto', fontSize: `${el.fontSize}pt`, transform: `rotate(${el.rotation || 0}deg)`, transformOrigin: 'center center' }}><div className={`border border-dashed p-1 whitespace-nowrap overflow-hidden transition-colors ${selectedElementId === el.id ? 'border-medical-600 bg-medical-50/80 text-medical-800' : 'border-gray-300 hover:border-medical-400 bg-white/50'}`}>{el.label} {el.id === 'rxItems' && '(لیست داروها)'}</div><div className="absolute -top-4 left-0 text-[8px] bg-black text-white px-1 rounded opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap">x:{Math.round(el.x)} y:{Math.round(el.y)} {el.rotation ? `r:${el.rotation}°` : ''}</div></div>))}</div></div>
+        <div className="w-64 bg-white border-l border-gray-200 p-4 overflow-y-auto z-10 shadow-lg"><h3 className="font-bold text-gray-700 mb-4 text-sm">{t('design_elements')}</h3><div className="space-y-2">{(Object.values(layout.elements) as PrintElement[]).map(el => (<div key={el.id} className={`p-3 rounded-lg border text-sm transition-colors cursor-pointer ${selectedElementId === el.id ? 'border-medical-500 bg-medical-50 ring-1 ring-medical-500' : 'border-gray-200 hover:bg-gray-50'}`} onClick={() => setSelectedElementId(el.id)}><div className="flex justify-between items-center mb-2"><span className="font-bold">{t(`el_${el.id}` as any)}</span><input type="checkbox" checked={el.visible} onChange={(e) => { setLayout(prev => ({ ...prev, elements: { ...prev.elements, [el.id]: { ...el, visible: e.target.checked } } })); }} /></div>{el.visible && selectedElementId === el.id && (<div className="space-y-3"><div className="flex gap-2 items-center"><label className="text-xs text-gray-400 w-8">{t('design_el_size')}</label><input type="number" className="w-full border border-gray-300 rounded px-1 py-0.5 text-xs" value={el.fontSize || 12} onChange={(e) => setLayout(prev => ({ ...prev, elements: { ...prev.elements, [el.id]: { ...el, fontSize: Number(e.target.value) } } }))} /><span className="text-[10px] text-gray-400">pt</span></div><div className="flex gap-2 items-center"><label className="text-xs text-gray-400 w-8">{t('design_el_width')}</label><input type="number" className="w-full border border-gray-300 rounded px-1 py-0.5 text-xs" value={el.width ? Math.round(el.width) : 0} onChange={(e) => setLayout(prev => ({ ...prev, elements: { ...prev.elements, [el.id]: { ...el, width: Number(e.target.value) } } }))} /><span className="text-[10px] text-gray-400">mm</span></div><button onClick={() => rotateElement(el.id)} className="w-full flex items-center justify-center gap-2 py-1.5 border border-gray-300 rounded hover:bg-gray-50 text-xs font-medium"><RotateCw className="w-3 h-3" />{t('design_el_rotate')} ({el.rotation || 0}°)</button></div>)}</div>))}</div></div>
+        <div className="flex-1 bg-gray-100 overflow-auto flex items-center justify-center p-8 relative" onMouseMove={handleMouseMove} onMouseUp={handleMouseUp} onMouseLeave={handleMouseUp}><div ref={containerRef} className="bg-white shadow-2xl relative overflow-hidden select-none" style={{ width: `${paperWidthMm}mm`, height: `${paperHeightMm}mm`, direction: 'ltr' }}>{layout.backgroundImage ? (<img src={layout.backgroundImage} className="absolute inset-0 w-full h-full object-cover opacity-40 pointer-events-none" alt="" />) : (<div className="absolute inset-0 flex items-center justify-center text-gray-200 text-6xl font-bold opacity-20 pointer-events-none -rotate-45">{layout.paperSize} PAPER</div>)}<div className="absolute left-0 top-0 right-0 h-[10mm] border-b border-blue-100 opacity-50 pointer-events-none"></div><div className="absolute left-[10mm] top-0 bottom-0 w-[1px] bg-blue-100 opacity-50 pointer-events-none"></div>{(Object.values(layout.elements) as PrintElement[]).map(el => el.visible && (<div key={el.id} onMouseDown={(e) => handleMouseDown(e, el.id)} className={`absolute cursor-move group hover:z-50 ${selectedElementId === el.id ? 'z-50' : 'z-10'}`} style={{ left: `${el.x}mm`, top: `${el.y}mm`, width: el.width ? `${el.width}mm` : 'auto', fontSize: `${el.fontSize}pt`, transform: `rotate(${el.rotation || 0}deg)`, transformOrigin: 'center center' }}><div className={`border border-dashed p-1 whitespace-nowrap overflow-hidden transition-colors ${selectedElementId === el.id ? 'border-medical-600 bg-medical-50/80 text-medical-800' : 'border-gray-300 hover:border-medical-400 bg-white/50'}`}>{t(`el_${el.id}` as any)}</div><div className="absolute -top-4 left-0 text-[8px] bg-black text-white px-1 rounded opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap">x:{Math.round(el.x)} y:{Math.round(el.y)} {el.rotation ? `r:${el.rotation}°` : ''}</div></div>))}</div></div>
       </div>
     </div>
   );
@@ -1185,14 +1270,15 @@ const PrintLayoutDesigner = () => {
 
 const SettingsView = () => {
   const { t } = useLanguage();
-  const [activeSubTab, setActiveSubTab] = useState<'profile' | 'designer' | 'backup' | 'security' | 'language'>('profile');
+  const [activeSubTab, setActiveSubTab] = useState<'profile' | 'designer' | 'backup' | 'security' | 'language' | 'appearance'>('profile');
 
   return (
     <div className="max-w-7xl mx-auto p-4 md:p-8 h-screen md:h-auto flex flex-col">
       <h1 className="text-2xl font-bold text-gray-800 mb-6">{t('settings_title')}</h1>
-      <div className="flex gap-2 mb-6 overflow-x-auto pb-2 no-scrollbar"><button onClick={() => setActiveSubTab('profile')} className={`px-4 py-2 rounded-xl whitespace-nowrap transition-colors flex items-center gap-2 ${activeSubTab === 'profile' ? 'bg-gray-800 text-white' : 'bg-white text-gray-600 hover:bg-gray-100'}`}><UserCog className="w-4 h-4"/>{t('settings_tab_profile')}</button><button onClick={() => setActiveSubTab('designer')} className={`px-4 py-2 rounded-xl whitespace-nowrap transition-colors flex items-center gap-2 ${activeSubTab === 'designer' ? 'bg-gray-800 text-white' : 'bg-white text-gray-600 hover:bg-gray-100'}`}><LayoutTemplate className="w-4 h-4"/>{t('settings_tab_design')}</button><button onClick={() => setActiveSubTab('backup')} className={`px-4 py-2 rounded-xl whitespace-nowrap transition-colors flex items-center gap-2 ${activeSubTab === 'backup' ? 'bg-gray-800 text-white' : 'bg-white text-gray-600 hover:bg-gray-100'}`}><RefreshCw className="w-4 h-4"/>{t('settings_tab_data')}</button><button onClick={() => setActiveSubTab('security')} className={`px-4 py-2 rounded-xl whitespace-nowrap transition-colors flex items-center gap-2 ${activeSubTab === 'security' ? 'bg-gray-800 text-white' : 'bg-white text-gray-600 hover:bg-gray-100'}`}><ShieldCheck className="w-4 h-4"/>{t('settings_tab_security')}</button><button onClick={() => setActiveSubTab('language')} className={`px-4 py-2 rounded-xl whitespace-nowrap transition-colors flex items-center gap-2 ${activeSubTab === 'language' ? 'bg-gray-800 text-white' : 'bg-white text-gray-600 hover:bg-gray-100'}`}><Globe className="w-4 h-4"/>{t('settings_tab_language')}</button></div>
+      <div className="flex gap-2 mb-6 overflow-x-auto pb-2 no-scrollbar"><button onClick={() => setActiveSubTab('profile')} className={`px-4 py-2 rounded-xl whitespace-nowrap transition-colors flex items-center gap-2 ${activeSubTab === 'profile' ? 'bg-gray-800 text-white' : 'bg-white text-gray-600 hover:bg-gray-100'}`}><UserCog className="w-4 h-4"/>{t('settings_tab_profile')}</button><button onClick={() => setActiveSubTab('appearance')} className={`px-4 py-2 rounded-xl whitespace-nowrap transition-colors flex items-center gap-2 ${activeSubTab === 'appearance' ? 'bg-gray-800 text-white' : 'bg-white text-gray-600 hover:bg-gray-100'}`}><Monitor className="w-4 h-4"/>{t('settings_tab_appearance')}</button><button onClick={() => setActiveSubTab('designer')} className={`px-4 py-2 rounded-xl whitespace-nowrap transition-colors flex items-center gap-2 ${activeSubTab === 'designer' ? 'bg-gray-800 text-white' : 'bg-white text-gray-600 hover:bg-gray-100'}`}><LayoutTemplate className="w-4 h-4"/>{t('settings_tab_design')}</button><button onClick={() => setActiveSubTab('backup')} className={`px-4 py-2 rounded-xl whitespace-nowrap transition-colors flex items-center gap-2 ${activeSubTab === 'backup' ? 'bg-gray-800 text-white' : 'bg-white text-gray-600 hover:bg-gray-100'}`}><RefreshCw className="w-4 h-4"/>{t('settings_tab_data')}</button><button onClick={() => setActiveSubTab('security')} className={`px-4 py-2 rounded-xl whitespace-nowrap transition-colors flex items-center gap-2 ${activeSubTab === 'security' ? 'bg-gray-800 text-white' : 'bg-white text-gray-600 hover:bg-gray-100'}`}><ShieldCheck className="w-4 h-4"/>{t('settings_tab_security')}</button><button onClick={() => setActiveSubTab('language')} className={`px-4 py-2 rounded-xl whitespace-nowrap transition-colors flex items-center gap-2 ${activeSubTab === 'language' ? 'bg-gray-800 text-white' : 'bg-white text-gray-600 hover:bg-gray-100'}`}><Globe className="w-4 h-4"/>{t('settings_tab_language')}</button></div>
       <div className="flex-1 md:min-h-[500px]">
         {activeSubTab === 'profile' && <DoctorProfileSettings />}
+        {activeSubTab === 'appearance' && <AppearanceSettings />}
         {activeSubTab === 'designer' && <PrintLayoutDesigner />}
         {activeSubTab === 'backup' && <BackupManager />}
         {activeSubTab === 'security' && <SecuritySettings />}
@@ -1216,8 +1302,9 @@ const Workbench = ({
   onPrint: (data: { patient: Patient, prescription: Prescription }, options?: { showTradeNames?: boolean }) => void,
   onAddPatient: () => void
 }) => {
-  const { t } = useLanguage();
+  const { t, direction } = useLanguage();
   const { showToast } = useToast();
+  const { isHighContrast } = useTheme();
   const [search, setSearch] = useState('');
   const [results, setResults] = useState<Patient[]>([]);
   
@@ -1276,7 +1363,7 @@ const Workbench = ({
     const newItems = tmpl.items.map(i => ({...i, id: crypto.randomUUID()}));
     setItems(prev => [...prev, ...newItems]);
     setShowTemplates(false);
-    showToast('نسخه آماده اعمال شد', 'info');
+    showToast(t('toast_saved'), 'info');
   };
 
   const addItem = () => {
@@ -1318,7 +1405,7 @@ const Workbench = ({
 
   const handleSaveAsTemplate = () => {
     if (items.length === 0) {
-      showToast('لیست داروها خالی است', 'error');
+      showToast(t('toast_error'), 'error');
       return;
     }
     setTemplateTitle(diagnosis || 'نسخه جدید');
@@ -1345,7 +1432,7 @@ const Workbench = ({
     setTemplates(updatedTemplates);
     syncTelemetry();
     setShowSaveTemplateModal(false);
-    showToast('به لیست نسخه‌های آماده اضافه شد', 'success');
+    showToast(t('toast_saved'), 'success');
   };
 
   // Prepares the Quick Add Modal based on current mode
@@ -1372,13 +1459,13 @@ const Workbench = ({
 
   const confirmQuickAdd = async () => {
      if (!quickAddData.name) {
-       showToast('نام ژنریک (علمی) دارو الزامی است.', 'error');
+       showToast(t('toast_fill_all'), 'error');
        return;
      }
 
      const exists = drugs.some(d => d.name.toLowerCase() === quickAddData.name.toLowerCase());
      if (exists) {
-         showToast('این دارو قبلاً در بانک موجود است', 'error');
+         showToast(t('toast_error'), 'error');
          return;
      }
 
@@ -1394,7 +1481,7 @@ const Workbench = ({
      setDrugs(updatedDrugs);
      
      setShowQuickAddModal(false);
-     showToast('دارو به بانک اطلاعاتی اضافه شد', 'success');
+     showToast(t('toast_saved'), 'success');
   };
 
   const handleSave = async (print: boolean) => {
@@ -1425,6 +1512,19 @@ const Workbench = ({
     }
   };
 
+  // Styles
+  const rxInputClass = isHighContrast 
+    ? "bg-white border-2 border-gray-600 rounded-lg focus:border-black shadow-sm px-3 py-2 font-medium text-gray-900" 
+    : "bg-transparent border-b border-transparent focus:border-medical-500 p-2";
+  
+  const vitalInputClass = isHighContrast
+    ? "w-20 p-1 border-2 border-gray-600 text-center font-bold focus:border-black outline-none rounded bg-white shadow-sm"
+    : "w-20 p-1 border-b border-gray-200 text-center focus:border-medical-500 outline-none";
+
+  const standardInputClass = isHighContrast 
+    ? "w-full p-3 border-2 border-gray-600 rounded-xl outline-none focus:border-black bg-white shadow-sm font-medium text-gray-900" 
+    : "w-full p-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-medical-500 outline-none bg-gray-50";
+
   if (!activePatient) {
     return (
       <div className="flex flex-col items-center justify-center h-[80vh] max-w-2xl mx-auto px-4">
@@ -1433,7 +1533,7 @@ const Workbench = ({
           <h2 className="text-3xl font-bold text-gray-800 mb-2">{t('dashboard_welcome')}</h2>
           <p className="text-gray-500 mb-8">{t('dashboard_subtitle')}</p>
           <div className="flex gap-3 w-full">
-            <div className="relative flex-1"><Search className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 w-6 h-6 rtl:right-4 ltr:left-4" /><input autoFocus className="w-full p-4 px-12 text-lg border border-gray-200 rounded-2xl focus:ring-4 focus:ring-medical-100 focus:border-medical-500 outline-none transition-all shadow-inner" placeholder={t('search_patient_placeholder')} value={search} onChange={e => setSearch(e.target.value)} />{results.length > 0 && (<div className="absolute top-full left-0 right-0 bg-white mt-2 rounded-xl shadow-xl border border-gray-100 overflow-hidden z-20 max-h-60 overflow-y-auto">{results.map(p => (<button key={p.id} onClick={() => onSelectPatient(p)} className="w-full text-right p-4 hover:bg-medical-50 border-b border-gray-50 last:border-0 transition-colors flex justify-between"><span className="font-bold text-gray-800">{p.fullName}</span><span className="text-sm text-gray-500">{p.age} {t('visit_age')}</span></button>))}</div>)}</div>
+            <div className="relative flex-1"><Search className={`absolute top-1/2 -translate-y-1/2 text-gray-400 w-6 h-6 ${direction === 'rtl' ? 'right-4' : 'left-4'}`} /><input autoFocus className="w-full p-4 px-12 text-lg border border-gray-200 rounded-2xl focus:ring-4 focus:ring-medical-100 focus:border-medical-500 outline-none transition-all shadow-inner" placeholder={t('search_patient_placeholder')} value={search} onChange={e => setSearch(e.target.value)} />{results.length > 0 && (<div className="absolute top-full left-0 right-0 bg-white mt-2 rounded-xl shadow-xl border border-gray-100 overflow-hidden z-20 max-h-60 overflow-y-auto">{results.map(p => (<button key={p.id} onClick={() => onSelectPatient(p)} className="w-full text-right p-4 hover:bg-medical-50 border-b border-gray-50 last:border-0 transition-colors flex justify-between"><span className="font-bold text-gray-800">{p.fullName}</span><span className="text-sm text-gray-500">{p.age} {t('visit_age')}</span></button>))}</div>)}</div>
             <button onClick={onAddPatient} className="bg-medical-700 hover:bg-medical-900 text-white p-4 rounded-2xl transition-colors shadow-lg shadow-medical-500/30 flex items-center justify-center min-w-[60px]" title={t('new_patient_btn')}><UserPlus className="w-7 h-7" /></button>
           </div>
         </div>
@@ -1454,7 +1554,7 @@ const Workbench = ({
         <div className="flex-1 overflow-y-auto p-4 md:p-8 space-y-6">
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div className="lg:col-span-2 space-y-4">
-              <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm"><label className="text-sm font-bold text-gray-700 mb-2 block">{t('visit_diagnosis')}</label><input className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-medical-500 outline-none" placeholder="مثال: Acute Bronchitis" value={diagnosis} onChange={e => setDiagnosis(e.target.value)} /></div>
+              <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm"><label className="text-sm font-bold text-gray-700 mb-2 block">{t('visit_diagnosis')}</label><input className={standardInputClass} placeholder="مثال: Acute Bronchitis" value={diagnosis} onChange={e => setDiagnosis(e.target.value)} /></div>
               <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
                 <div className="p-4 bg-gray-50 border-b border-gray-200 flex justify-between items-center">
                   <h3 className="font-bold text-gray-700 flex items-center gap-2"><Pill className="w-5 h-5 text-medical-700" />{t('visit_rx_items')}</h3>
@@ -1467,17 +1567,17 @@ const Workbench = ({
                 
                 <div className="divide-y divide-gray-100">
                   {items.map((item, index) => (
-                    <div key={item.id} className="p-3 flex gap-2 items-start bg-white group hover:bg-gray-50 transition-colors">
-                      <div className="w-8 pt-3 text-center text-gray-300 text-sm font-bold">{index + 1}</div>
+                    <div key={item.id} className={`p-3 flex gap-2 items-start bg-white group hover:bg-gray-50 transition-colors ${isHighContrast ? 'py-4' : ''}`}>
+                      <div className={`w-8 text-center text-gray-300 text-sm font-bold ${isHighContrast ? 'pt-4' : 'pt-3'}`}>{index + 1}</div>
                       <div className="flex-1 grid grid-cols-1 md:grid-cols-12 gap-2">
                         <div className="md:col-span-5 relative">
-                          <input className="w-full p-2 bg-transparent border-b border-transparent focus:border-medical-500 outline-none font-medium" placeholder={searchMode === 'trade' ? 'جستجوی نام تجاری...' : t('visit_drug_name')} value={item.drugName} onChange={e => updateItem(item.id, 'drugName', e.target.value)} list={searchMode === 'trade' ? "drug-suggestions-trade" : "drug-suggestions-generic"} />
+                          <input className={`${rxInputClass} w-full outline-none`} placeholder={searchMode === 'trade' ? 'جستجوی نام تجاری...' : t('visit_drug_name')} value={item.drugName} onChange={e => updateItem(item.id, 'drugName', e.target.value)} list={searchMode === 'trade' ? "drug-suggestions-trade" : "drug-suggestions-generic"} />
                           {searchMode === 'trade' && item.drugName && (<div className="absolute right-0 top-0 -mt-2"><span className="text-[9px] bg-purple-100 text-purple-800 px-1 rounded">Brand Mode</span></div>)}
                         </div>
-                        <div className="md:col-span-2"><input className="w-full p-2 bg-transparent border-b border-transparent focus:border-medical-500 outline-none text-sm" placeholder={t('visit_dosage')} value={item.dosage} onChange={e => updateItem(item.id, 'dosage', e.target.value)} /></div>
-                        <div className="md:col-span-5"><input className="w-full p-2 bg-transparent border-b border-transparent focus:border-medical-500 outline-none text-sm" placeholder={t('visit_instruction')} value={item.instruction} onChange={e => updateItem(item.id, 'instruction', e.target.value)} /></div>
+                        <div className="md:col-span-2"><input className={`${rxInputClass} w-full outline-none text-sm`} placeholder={t('visit_dosage')} value={item.dosage} onChange={e => updateItem(item.id, 'dosage', e.target.value)} /></div>
+                        <div className="md:col-span-5"><input className={`${rxInputClass} w-full outline-none text-sm`} placeholder={t('visit_instruction')} value={item.instruction} onChange={e => updateItem(item.id, 'instruction', e.target.value)} /></div>
                       </div>
-                      <div className="flex gap-1">
+                      <div className="flex gap-1 items-center">
                         <button onClick={() => initiateQuickAdd(item)} className="p-2 text-blue-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="افزودن به بانک دارویی"><Save className="w-4 h-4" /></button>
                         <button onClick={() => removeItem(item.id)} className="p-2 text-gray-300 hover:text-red-500 transition-colors"><Trash2 className="w-4 h-4" /></button>
                       </div>
@@ -1493,11 +1593,11 @@ const Workbench = ({
               <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm">
                 <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2"><Activity className="w-5 h-5 text-medical-700" />{t('visit_vitals')}</h3>
                 <div className="space-y-3">
-                  <div className="flex justify-between items-center"><label className="text-sm text-gray-500">{t('visit_bp')}</label><input className="w-20 p-1 border-b border-gray-200 text-center focus:border-medical-500 outline-none" placeholder="120/80" value={vitalSigns.bp || ''} onChange={e => setVitalSigns({...vitalSigns, bp: e.target.value})} /></div>
-                  <div className="flex justify-between items-center"><label className="text-sm text-gray-500">{t('visit_pr')}</label><input className="w-20 p-1 border-b border-gray-200 text-center focus:border-medical-500 outline-none" placeholder="72" value={vitalSigns.pr || ''} onChange={e => setVitalSigns({...vitalSigns, pr: e.target.value})} /></div>
-                  <div className="flex justify-between items-center"><label className="text-sm text-gray-500">{t('visit_rr')}</label><input className="w-20 p-1 border-b border-gray-200 text-center focus:border-medical-500 outline-none" placeholder="18" value={vitalSigns.rr || ''} onChange={e => setVitalSigns({...vitalSigns, rr: e.target.value})} /></div>
-                  <div className="flex justify-between items-center"><label className="text-sm text-gray-500">{t('visit_temp')}</label><input className="w-20 p-1 border-b border-gray-200 text-center focus:border-medical-500 outline-none" placeholder="36.5" value={vitalSigns.temp || ''} onChange={e => setVitalSigns({...vitalSigns, temp: e.target.value})} /></div>
-                  <div className="flex justify-between items-center pt-2 border-t border-dashed border-gray-200"><label className="text-sm font-bold text-gray-700">{t('visit_weight')}</label><input className="w-20 p-1 bg-yellow-50 border-b border-yellow-200 text-center font-bold text-gray-800 focus:border-medical-500 outline-none rounded" value={vitalSigns.weight || ''} onChange={e => setVitalSigns({...vitalSigns, weight: e.target.value})} /></div>
+                  <div className="flex justify-between items-center"><label className="text-sm text-gray-500">{t('visit_bp')}</label><input className={vitalInputClass} placeholder="120/80" value={vitalSigns.bp || ''} onChange={e => setVitalSigns({...vitalSigns, bp: e.target.value})} /></div>
+                  <div className="flex justify-between items-center"><label className="text-sm text-gray-500">{t('visit_pr')}</label><input className={vitalInputClass} placeholder="72" value={vitalSigns.pr || ''} onChange={e => setVitalSigns({...vitalSigns, pr: e.target.value})} /></div>
+                  <div className="flex justify-between items-center"><label className="text-sm text-gray-500">{t('visit_rr')}</label><input className={vitalInputClass} placeholder="18" value={vitalSigns.rr || ''} onChange={e => setVitalSigns({...vitalSigns, rr: e.target.value})} /></div>
+                  <div className="flex justify-between items-center"><label className="text-sm text-gray-500">{t('visit_temp')}</label><input className={vitalInputClass} placeholder="36.5" value={vitalSigns.temp || ''} onChange={e => setVitalSigns({...vitalSigns, temp: e.target.value})} /></div>
+                  <div className="flex justify-between items-center pt-2 border-t border-dashed border-gray-200"><label className="text-sm font-bold text-gray-700">{t('visit_weight')}</label><input className={`${vitalInputClass} ${!isHighContrast && 'bg-yellow-50 border-b-yellow-200 text-gray-800'}`} value={vitalSigns.weight || ''} onChange={e => setVitalSigns({...vitalSigns, weight: e.target.value})} /></div>
                 </div>
               </div>
               {(activePatient.medicalHistory || activePatient.allergies) && (<div className="bg-red-50 p-5 rounded-2xl border border-red-100"><h3 className="font-bold text-red-800 mb-2 text-sm flex items-center gap-2"><AlertCircle className="w-4 h-4" />{t('visit_history_alert')}</h3>{activePatient.allergies && (<div className="mb-2"><span className="text-xs font-bold text-red-700 block mb-1">{t('visit_allergies')}:</span><p className="text-sm text-red-600 leading-relaxed">{activePatient.allergies}</p></div>)}{activePatient.medicalHistory && (<div><span className="text-xs font-bold text-red-700 block mb-1">{t('visit_history')}:</span><p className="text-sm text-red-600 leading-relaxed">{activePatient.medicalHistory}</p></div>)}</div>)}
@@ -1517,7 +1617,7 @@ const Workbench = ({
                   onChange={e => setPrintTradeNames(e.target.checked)}
                   className="w-4 h-4 rounded text-medical-600 focus:ring-medical-500"
                 />
-                <span className="text-sm text-gray-600 font-medium">درج نام تجاری در نسخه</span>
+                <span className="text-sm text-gray-600 font-medium">{t('visit_print_trade')}</span>
              </label>
            </div>
 
@@ -1530,8 +1630,8 @@ const Workbench = ({
         {showSaveTemplateModal && (
           <div className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center p-4">
              <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-2xl animate-in fade-in zoom-in duration-200">
-               <h3 className="font-bold text-lg text-gray-800 mb-4 flex items-center gap-2"><FileText className="w-5 h-5 text-medical-700" />{t('visit_save_template')}</h3>
-               <label className="block text-sm font-medium text-gray-700 mb-2">عنوان الگو</label><input autoFocus className="w-full p-3 border border-gray-200 rounded-xl mb-6 focus:ring-2 focus:ring-medical-500 outline-none" placeholder="مثال: سرماخوردگی" value={templateTitle} onChange={e => setTemplateTitle(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') confirmSaveTemplate(); }} />
+               <h3 className="font-bold text-lg text-gray-800 mb-4 flex items-center gap-2"><FileText className="w-5 h-5 text-medical-700" />{t('visit_template_modal_title')}</h3>
+               <label className="block text-sm font-medium text-gray-700 mb-2">{t('visit_template_title_label')}</label><input autoFocus className={standardInputClass} placeholder="مثال: سرماخوردگی" value={templateTitle} onChange={e => setTemplateTitle(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') confirmSaveTemplate(); }} />
                <div className="flex gap-3"><button onClick={() => setShowSaveTemplateModal(false)} className="flex-1 py-3 border border-gray-200 text-gray-600 font-bold rounded-xl hover:bg-gray-50 transition-colors">{t('cancel')}</button><button onClick={confirmSaveTemplate} className="flex-1 py-3 bg-medical-700 text-white font-bold rounded-xl hover:bg-medical-900 transition-colors">{t('save')}</button></div>
              </div>
           </div>
@@ -1540,10 +1640,10 @@ const Workbench = ({
         {showQuickAddModal && (
           <div className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center p-4">
              <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-2xl animate-in fade-in zoom-in duration-200">
-               <h3 className="font-bold text-lg text-gray-800 mb-4 flex items-center gap-2"><Database className="w-5 h-5 text-medical-700" />افزودن سریع به بانک</h3>
-               <div className="mb-4 text-xs text-gray-500 bg-gray-50 p-2 rounded">{searchMode === 'trade' ? 'شما نام تجاری را وارد کردید. لطفاً نام علمی (ژنریک) را برای تکمیل ثبت وارد کنید.' : 'نام علمی ثبت شد. در صورت تمایل نام تجاری را نیز وارد کنید.'}</div>
-               <label className="block text-sm font-medium text-gray-700 mb-1">{t('drug_generic_name')} <span className="text-red-500">*</span></label><input className="w-full p-3 border border-gray-200 rounded-xl mb-3 focus:ring-2 focus:ring-medical-500 outline-none bg-gray-50 font-bold" value={quickAddData.name} onChange={e => setQuickAddData({...quickAddData, name: e.target.value})} placeholder="نام علمی (اجباری)" />
-               <label className="block text-sm font-medium text-gray-700 mb-1">{t('drug_trade_name')}</label><input autoFocus className="w-full p-3 border border-gray-200 rounded-xl mb-6 focus:ring-2 focus:ring-medical-500 outline-none" value={quickAddData.tradeName} onChange={e => setQuickAddData({...quickAddData, tradeName: e.target.value})} placeholder="نام تجاری/برند (اختیاری)" />
+               <h3 className="font-bold text-lg text-gray-800 mb-4 flex items-center gap-2"><Database className="w-5 h-5 text-medical-700" />{t('visit_quick_add_title')}</h3>
+               <div className="mb-4 text-xs text-gray-500 bg-gray-50 p-2 rounded">{searchMode === 'trade' ? t('visit_quick_add_subtitle_trade') : t('visit_quick_add_subtitle_generic')}</div>
+               <label className="block text-sm font-medium text-gray-700 mb-1">{t('drug_generic_name')} <span className="text-red-500">*</span></label><input className={`${standardInputClass} mb-3 font-bold`} value={quickAddData.name} onChange={e => setQuickAddData({...quickAddData, name: e.target.value})} placeholder="نام علمی (اجباری)" />
+               <label className="block text-sm font-medium text-gray-700 mb-1">{t('drug_trade_name')}</label><input autoFocus className={`${standardInputClass} mb-6`} value={quickAddData.tradeName} onChange={e => setQuickAddData({...quickAddData, tradeName: e.target.value})} placeholder="نام تجاری/برند (اختیاری)" />
                <div className="flex gap-3"><button onClick={() => setShowQuickAddModal(false)} className="flex-1 py-3 border border-gray-200 text-gray-600 font-bold rounded-xl hover:bg-gray-50 transition-colors">{t('cancel')}</button><button onClick={confirmQuickAdd} className="flex-1 py-3 bg-medical-700 text-white font-bold rounded-xl hover:bg-medical-900 transition-colors">{t('save')}</button></div>
              </div>
           </div>
@@ -1603,13 +1703,13 @@ function MainApp() {
 
   const handleAdminLogin = (e: React.FormEvent) => {
     e.preventDefault();
-    if (adminPassword === ADMIN_SECRET_CODE) { setShowAdminLogin(false); setAdminPassword(''); setShowAdminPanel(true); showToast('حالت نظارت فعال شد', 'success'); } else { showToast('رمز عبور نادرست است', 'error'); setAdminPassword(''); }
+    if (adminPassword === ADMIN_SECRET_CODE) { setShowAdminLogin(false); setAdminPassword(''); setShowAdminPanel(true); showToast('حالت نظارت فعال شد', 'success'); } else { showToast(t('login_error_pass'), 'error'); setAdminPassword(''); }
   };
 
   const handleSavePatient = async (patient: Patient) => {
     await dbParams.addPatient(patient); setIsModalOpen(false); setEditingPatient(null); setRefreshTrigger(prev => prev + 1); uploadSinglePatient(patient);
     if (activeTab === 'dashboard' && !activePatient) { setActivePatient(patient); }
-    showToast('پرونده بیمار با موفقیت ذخیره شد', 'success');
+    showToast(t('toast_saved'), 'success');
   };
 
   const openAddModal = () => { setEditingPatient(null); setIsModalOpen(true); };
@@ -1637,7 +1737,7 @@ function MainApp() {
     try {
       const newTemplate: PrescriptionTemplate = { id: crypto.randomUUID(), title: adminTemplate.title, diagnosis: adminTemplate.diagnosis, items: (adminTemplate.items || []).map((item: any) => ({ ...item, id: crypto.randomUUID() })) };
       await dbParams.addTemplate(newTemplate); syncTelemetry(); showToast(`نسخه «${newTemplate.title}» به لیست شما اضافه شد`, 'success');
-    } catch (error) { console.error('Import failed', error); showToast('خطا در افزودن نسخه', 'error'); }
+    } catch (error) { console.error('Import failed', error); showToast(t('toast_error'), 'error'); }
   };
 
   if (!isAuthenticated) { return <LoginScreen onLogin={() => setIsAuthenticated(true)} />; }
@@ -1684,9 +1784,11 @@ export default function App() {
   return (
     <ErrorBoundary>
       <LanguageProvider>
-        <ToastProvider>
-          <MainApp />
-        </ToastProvider>
+        <ThemeProvider>
+          <ToastProvider>
+            <MainApp />
+          </ToastProvider>
+        </ThemeProvider>
       </LanguageProvider>
     </ErrorBoundary>
   );
