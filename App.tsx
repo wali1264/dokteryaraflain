@@ -733,7 +733,7 @@ const Navigation = ({ activeTab, onTabChange, onSecretClick }: { activeTab: stri
           ))}
         </div>
         <div className="p-4 border-t border-gray-100 text-center text-xs text-gray-400">
-           v2.2
+           v2.3
         </div>
       </div>
 
@@ -839,12 +839,30 @@ const PatientModal = ({ isOpen, onClose, onSave, initialData }: { isOpen: boolea
   const { t } = useLanguage();
   const { isHighContrast } = useTheme();
   const [formData, setFormData] = useState<Partial<Patient>>({ fullName: '', age: '' as any, gender: 'male', weight: '' as any, medicalHistory: '', allergies: '' });
+  
+  // New separated state for name splitting
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
 
   useEffect(() => {
     if (initialData) {
       setFormData(initialData);
+      
+      // Logic to split name: Try to split by the LAST space
+      const full = initialData.fullName || '';
+      const lastSpaceIndex = full.lastIndexOf(' ');
+      
+      if (lastSpaceIndex !== -1) {
+         setFirstName(full.substring(0, lastSpaceIndex));
+         setLastName(full.substring(lastSpaceIndex + 1));
+      } else {
+         setFirstName(full);
+         setLastName('');
+      }
     } else {
       setFormData({ fullName: '', age: '' as any, gender: 'male', weight: '' as any, medicalHistory: '', allergies: '' });
+      setFirstName('');
+      setLastName('');
     }
   }, [initialData, isOpen]);
 
@@ -852,10 +870,14 @@ const PatientModal = ({ isOpen, onClose, onSave, initialData }: { isOpen: boolea
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.fullName) return;
+    
+    // Combine First and Last Name
+    const combinedName = `${firstName} ${lastName}`.trim();
+    if (!combinedName) return;
+
     const patient: Patient = {
       id: initialData?.id || crypto.randomUUID(),
-      fullName: formData.fullName!,
+      fullName: combinedName,
       age: Number(formData.age),
       gender: formData.gender as 'male' | 'female',
       weight: Number(formData.weight),
@@ -884,7 +906,32 @@ const PatientModal = ({ isOpen, onClose, onSave, initialData }: { isOpen: boolea
           </button>
         </div>
         <form onSubmit={handleSubmit} className="p-6 overflow-y-auto space-y-4">
-          <div><label className="block text-sm font-medium text-gray-700 mb-1">{t('patient_fullname')}</label><input type="text" required className={inputClass} value={formData.fullName} onChange={e => setFormData({...formData, fullName: e.target.value})} /></div>
+          
+          {/* Split Name Fields */}
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">{t('patient_firstname')}</label>
+              <input 
+                type="text" 
+                required 
+                className={inputClass} 
+                value={firstName} 
+                onChange={e => setFirstName(e.target.value)} 
+                autoFocus
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">{t('patient_lastname')}</label>
+              <input 
+                type="text" 
+                required 
+                className={inputClass} 
+                value={lastName} 
+                onChange={e => setLastName(e.target.value)} 
+              />
+            </div>
+          </div>
+
           <div className="grid grid-cols-2 gap-4">
             <div><label className="block text-sm font-medium text-gray-700 mb-1">{t('patient_age')}</label><input type="number" required className={inputClass} value={formData.age} onChange={e => setFormData({...formData, age: Number(e.target.value)})} /></div>
             <div><label className="block text-sm font-medium text-gray-700 mb-1">{t('patient_gender')}</label><div className="flex bg-gray-100 p-1 rounded-xl"><button type="button" className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all ${formData.gender === 'male' ? 'bg-white text-medical-700 shadow-sm' : 'text-gray-500'}`} onClick={() => setFormData({...formData, gender: 'male'})}>{t('patient_male')}</button><button type="button" className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all ${formData.gender === 'female' ? 'bg-white text-medical-700 shadow-sm' : 'text-gray-500'}`} onClick={() => setFormData({...formData, gender: 'female'})}>{t('patient_female')}</button></div></div>
